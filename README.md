@@ -9,6 +9,21 @@ over very large key sets.
 This is an implementation of [this paper](https://arxiv.org/abs/1702.03154). It is in part
 inspired by Damien Gryski's [Boomphf](https://github.com/dgryski/go-boomphf).
 
+## Usage
+Assuming you have read your keys, hashed them into `uint64`, this is how you can use the library:
+
+```go
+
+	bb, err := bbhash.New(2.0, keys)
+	if err != nil { panic(err) }
+
+	// Now, bb.Map[] is setup with the right perfect-hash mapping for each key.
+	for i, k := range keys {
+		fmt.Printf("%d: %#x maps to %d\n", i, k, bb.Map[i])
+	}
+
+```
+
 ## Implementation Notes
 
 * Keys are `uint64`, for all other types, use a good hash function such as Metrohash or

@@ -13,6 +13,7 @@
 package bbhash
 
 import (
+	"bytes"
 	"fmt"
 
 	"crypto/rand"
@@ -21,7 +22,7 @@ import (
 
 // BBHash represents a computed minimal perfect hash for a given set of keys.
 type BBHash struct {
-	bits  []*BitVector
+	bits  []*bitVector
 	ranks []uint64
 	salt  uint64
 
@@ -49,8 +50,8 @@ func New(g float64, keys []uint64) (*BBHash, error) {
 	var lvl uint
 
 	sz := uint(len(keys))
-	A := NewBitVector(sz, g)
-	coll := NewBitVector(sz, g)
+	A := NewbitVector(sz, g)
+	coll := NewbitVector(sz, g)
 	redo := make([]uint64, 0, sz)
 	salt := rand64()
 	okey := keys
@@ -94,7 +95,7 @@ func New(g float64, keys []uint64) (*BBHash, error) {
 
 		redo = redo[:0]
 		sz = uint(len(keys))
-		A = NewBitVector(sz, g)
+		A = NewbitVector(sz, g)
 		coll.Reset()
 		lvl++
 
@@ -110,8 +111,7 @@ func New(g float64, keys []uint64) (*BBHash, error) {
 	for i, k := range okey {
 		j := bb.Find(k)
 		if j == 0 {
-			s := fmt.Sprintf("can't find key %#x at %d", k, i)
-			panic(s)
+			return nil, fmt.Errorf("can't find key %#x at %d", k, i)
 		}
 		bb.Map = append(bb.Map, j)
 
@@ -138,6 +138,20 @@ func (bb *BBHash) Find(k uint64) uint64 {
 
 	return 0
 }
+
+// Stringer interface for BBHash
+func (bb BBHash) String() string {
+	var b bytes.Buffer
+
+	b.WriteString(fmt.Sprintf("BBHash: salt %#x; %d levels\n", bb.salt, len(bb.bits)))
+
+	for i, bv := range bb.bits {
+		b.WriteString(fmt.Sprintf("  %d: %d bits\n", i, bv.Size()))
+	}
+
+	return b.String()
+}
+
 
 // Precompute ranks for each level so we can answer queries quickly.
 func (bb *BBHash) preComputeRank() {

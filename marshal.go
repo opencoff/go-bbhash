@@ -70,6 +70,17 @@ func (bb *BBHash) MarshalBinary(w io.Writer) error {
 	return nil
 }
 
+
+// MarshalBinarySize returns the size of the marshaled bbhash (in bytes)
+func (bb *BBHash) MarshalBinarySize() uint64 {
+	var z uint64 = 4 * 8  // header
+
+	for _, bv := range bb.bits {
+		z += bv.MarshalBinarySize()
+	}
+	return z
+}
+
 // UnmarshalBBHash reads a previously marshalled binary stream from 'r' and recreates
 // the in-memory instance of BBHash.
 func UnmarshalBBHash(r io.Reader) (*BBHash, error) {
@@ -96,12 +107,12 @@ func UnmarshalBBHash(r io.Reader) (*BBHash, error) {
 	}
 
 	bb := &BBHash{
-		bits: make([]*BitVector, v),
+		bits: make([]*bitVector, v),
 		salt: le.Uint64(b[16:24]),
 	}
 
 	for i := uint64(0); i < v; i++ {
-		bv, err := UnmarshalBitVector(r)
+		bv, err := UnmarshalbitVector(r)
 		if err != nil {
 			return nil, err
 		}

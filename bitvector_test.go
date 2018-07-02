@@ -30,7 +30,7 @@ func newAsserter(t *testing.T) func(cond bool, msg string, args ...interface{}) 
 func Test0(t *testing.T) {
 	assert := newAsserter(t)
 
-	bv := NewBitVector(100, 1.0)
+	bv := NewbitVector(100, 1.0)
 	assert(bv.Size() == 128, "size mismatch; exp 128, saw %d", bv.Size())
 
 	var i uint64
@@ -54,7 +54,7 @@ func TestMarshal(t *testing.T) {
 
 	var b bytes.Buffer
 
-	bv := NewBitVector(100, 1.0)
+	bv := NewbitVector(100, 1.0)
 	assert(bv.Size() == 128, "size mismatch; exp 128, saw %d", bv.Size())
 
 	var i uint64
@@ -68,7 +68,7 @@ func TestMarshal(t *testing.T) {
 	expsz := 8 * (1 + bv.Words())
 	assert(uint64(b.Len()) == expsz, "marshal size incorrect; exp %d, saw %d", expsz, b.Len())
 
-	bn, err := UnmarshalBitVector(&b)
+	bn, err := UnmarshalbitVector(&b)
 	assert(err == nil, "unmarshal failed: %s", err)
 	assert(bn.Size() == bv.Size(), "unmarshal size error; exp %d, saw %d", bv.Size(), bn.Size())
 
