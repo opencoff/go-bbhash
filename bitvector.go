@@ -19,10 +19,10 @@ type bitVector struct {
 	// XXX Other fields to pre-compute rank
 }
 
-// NewbitVector creates a bitvector to hold atleast 'size * g' bits.
+// newbitVector creates a bitvector to hold atleast 'size * g' bits.
 // The value 'g' is an expansion factor (typically > 1.0). The resulting size
 // is rounded-up to the next multiple of 64.
-func NewbitVector(size uint, g float64) *bitVector {
+func newbitVector(size uint, g float64) *bitVector {
 	sz := uint(float64(size) * g)
 	sz += 63
 	sz /= 64

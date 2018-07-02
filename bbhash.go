@@ -50,8 +50,8 @@ func New(g float64, keys []uint64) (*BBHash, error) {
 	var lvl uint
 
 	sz := uint(len(keys))
-	A := NewbitVector(sz, g)
-	coll := NewbitVector(sz, g)
+	A := newbitVector(sz, g)
+	coll := newbitVector(sz, g)
 	redo := make([]uint64, 0, sz)
 	salt := rand64()
 	okey := keys
@@ -95,7 +95,7 @@ func New(g float64, keys []uint64) (*BBHash, error) {
 
 		redo = redo[:0]
 		sz = uint(len(keys))
-		A = NewbitVector(sz, g)
+		A = newbitVector(sz, g)
 		coll.Reset()
 		lvl++
 
