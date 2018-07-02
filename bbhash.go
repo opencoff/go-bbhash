@@ -172,7 +172,7 @@ func hash(key, salt uint64, lvl uint) uint64 {
 	var h uint64 = m
 
 	h ^= mix(key)
-	h >>= lvl
+	h = (h << lvl) | (h >> (64 - lvl))
 	h *= m
 	return mix(h) ^ salt
 }
