@@ -128,9 +128,9 @@ func (b *bitVector) MarshalBinarySize() uint64 {
 }
 
 
-// UnmarshalbitVector reads a previously encoded bitvector and reconstructs
+// unmarshalbitVector reads a previously encoded bitvector and reconstructs
 // the in-memory version.
-func UnmarshalbitVector(r io.Reader) (*bitVector, error) {
+func unmarshalbitVector(r io.Reader) (*bitVector, error) {
 	var x [8]byte
 	le := binary.LittleEndian
 

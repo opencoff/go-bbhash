@@ -112,7 +112,7 @@ func UnmarshalBBHash(r io.Reader) (*BBHash, error) {
 	}
 
 	for i := uint64(0); i < v; i++ {
-		bv, err := UnmarshalbitVector(r)
+		bv, err := unmarshalbitVector(r)
 		if err != nil {
 			return nil, err
 		}

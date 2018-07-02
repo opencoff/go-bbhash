@@ -68,7 +68,7 @@ func TestMarshal(t *testing.T) {
 	expsz := 8 * (1 + bv.Words())
 	assert(uint64(b.Len()) == expsz, "marshal size incorrect; exp %d, saw %d", expsz, b.Len())
 
-	bn, err := UnmarshalbitVector(&b)
+	bn, err := unmarshalbitVector(&b)
 	assert(err == nil, "unmarshal failed: %s", err)
 	assert(bn.Size() == bv.Size(), "unmarshal size error; exp %d, saw %d", bv.Size(), bn.Size())
 
