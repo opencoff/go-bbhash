@@ -9,6 +9,22 @@ over very large key sets.
 This is an implementation of [this paper](https://arxiv.org/abs/1702.03154). It is in part
 inspired by Damien Gryski's [Boomphf](https://github.com/dgryski/go-boomphf).
 
+*NOTE* Minimal Perfect Hash functions take a fixed input and
+generate a mapping to lookup the items in constant time. In
+particular, they are NOT a replacement for a traditional hash-table;
+i.e., it may yield false-positives when queried using keys not
+present during construction. In concrete terms:
+
+   Let S = {k0, k1, ... kn}  be your input key set.
+
+   If H: S -> {0, .. n} is a minimal perfect hash function, then
+   H(kx) for kx NOT in S may yield an integer result (indicating
+   that kx was successfully "looked up").
+
+Thus, if users of a minimal-perfect-hash library are unsure of the
+input being passed to such a `Lookup()` function, they should add an
+additional comparison against the actual key to verify.
+
 ## Usage
 Assuming you have read your keys, hashed them into `uint64`, this is how you can use the library:
 
