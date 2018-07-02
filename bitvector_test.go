@@ -1,15 +1,13 @@
 // bitvector_test.go -- test suite for bitvector
 //
 
-
 package bbhash
-
 
 import (
 	"bytes"
 	"fmt"
-	"testing"
 	"runtime"
+	"testing"
 )
 
 func newAsserter(t *testing.T) func(cond bool, msg string, args ...interface{}) {
@@ -37,7 +35,9 @@ func Test0(t *testing.T) {
 
 	var i uint64
 	for i = 0; i < bv.Size(); i++ {
-		if 1 == (i & 1) { bv.Set(i) }
+		if 1 == (i & 1) {
+			bv.Set(i)
+		}
 	}
 
 	for i = 0; i < bv.Size(); i++ {
@@ -49,7 +49,6 @@ func Test0(t *testing.T) {
 	}
 }
 
-
 func TestMarshal(t *testing.T) {
 	assert := newAsserter(t)
 
@@ -60,7 +59,9 @@ func TestMarshal(t *testing.T) {
 
 	var i uint64
 	for i = 0; i < bv.Size(); i++ {
-		if 1 == (i & 1) { bv.Set(i) }
+		if 1 == (i & 1) {
+			bv.Set(i)
+		}
 	}
 
 	bv.MarshalBinary(&b)
@@ -70,7 +71,6 @@ func TestMarshal(t *testing.T) {
 	bn, err := UnmarshalBitVector(&b)
 	assert(err == nil, "unmarshal failed: %s", err)
 	assert(bn.Size() == bv.Size(), "unmarshal size error; exp %d, saw %d", bv.Size(), bn.Size())
-
 
 	for i = 0; i < bv.Size(); i++ {
 		if bv.IsSet(i) {

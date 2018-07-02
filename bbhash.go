@@ -8,9 +8,8 @@
 //
 // License GPLv2
 
-
 // Package bbhash implements BBHash - a new algorithm for creating fast, minimal perfect hash
-// functions.
+// functions as described in: https://arxiv.org/abs/1702.03154
 package bbhash
 
 import (
@@ -104,7 +103,6 @@ func New(g float64, keys []uint64) (*BBHash, error) {
 		}
 	}
 
-
 	bb.preComputeRank()
 
 	// We reuse 'redo' to return the final index of hash keys
@@ -123,6 +121,8 @@ func New(g float64, keys []uint64) (*BBHash, error) {
 }
 
 // Find returns a unique integer representing the minimal hash for key 'k'.
+// The return value is meaningful ONLY for keys in the original key set (provided 
+// at the time of construction of the minimal-hash).
 // If the key is in the original key-set
 func (bb *BBHash) Find(k uint64) uint64 {
 	for lvl, bv := range bb.bits {
@@ -139,7 +139,6 @@ func (bb *BBHash) Find(k uint64) uint64 {
 	return 0
 }
 
-
 // Precompute ranks for each level so we can answer queries quickly.
 func (bb *BBHash) preComputeRank() {
 	var pop uint64
@@ -153,11 +152,10 @@ func (bb *BBHash) preComputeRank() {
 	}
 }
 
-
 // One round of Zi Long Tan's superfast hash
 func hash(key, salt uint64, lvl uint) uint64 {
 	const m uint64 = 0x880355f21e6d1965
-	var h uint64 =  m
+	var h uint64 = m
 
 	h ^= mix(key)
 	h >>= lvl
