@@ -18,19 +18,34 @@ import (
 
 	"crypto/rand"
 	"encoding/binary"
+	"runtime"
+	"sync"
 )
 
 // BBHash represents a computed minimal perfect hash for a given set of keys.
 type BBHash struct {
+	sync.Mutex
+
 	bits  []*bitVector
 	ranks []uint64
 	salt  uint64
+}
 
-	// Mapping between keys and their minimal perfect hash.
-	// For a given key 'i' in the list provided to New(),
-	// Map[i] is the minimal hash index for key[i].
-	// Note: the minimal hash index is 1 based (NOT zero based).
-	Map []uint64
+
+// state used by go-routines when we parallelize the algorithm
+type state struct {
+	sync.Mutex
+
+	A *bitVector
+	coll *bitVector
+	redo  []uint64
+
+	lvl  uint
+
+	bb *BBHash
+
+	wg sync.WaitGroup
+	g  float64  // gamma
 }
 
 // Gamma is an expansion factor for each of the bitvectors we build.
@@ -43,26 +58,44 @@ const Gamma float64 = 2.0
 // probability of collision.
 const MaxLevel uint = 200
 
+// Minimum number of keys before we use a parallel algorithm
+const MinParallelKeys int = 100000
+
 // New creates a new minimal hash function to represent the keys in 'keys'.
 // Upon successful return from this function, the Map element of BBHash will
 // be appropriately populated.
 func New(g float64, keys []uint64) (*BBHash, error) {
-	var lvl uint
-
 	sz := uint(len(keys))
-	A := newbitVector(sz, g)
-	coll := newbitVector(sz, g)
-	redo := make([]uint64, 0, sz)
-	salt := rand64()
-	okey := keys
 
 	bb := &BBHash{
-		salt: salt,
+		salt: rand64(),
 	}
 
+	s := &state{
+		A:    newbitVector(sz, g),
+		coll: newbitVector(sz, g),
+		redo: make([]uint64, 0, sz),
+		bb:   bb,
+		g:    g,
+	}
+
+	err := s.singleThread(keys)
+	if err != nil {
+		return nil, err
+	}
+	return bb, nil
+}
+
+
+func (s *state) singleThread(keys []uint64) error {
+	A := s.A
+	salt := s.bb.salt
+	coll := s.coll
+
 	for len(keys) > 0 {
+		sz := A.Size()
 		for _, k := range keys {
-			i := hash(k, salt, lvl) % A.Size()
+			i := hash(k, salt, s.lvl) % sz
 
 			if coll.IsSet(i) {
 				continue
@@ -77,47 +110,130 @@ func New(g float64, keys []uint64) (*BBHash, error) {
 		// Sadly, no way to avoid scanning the keyspace _twice_.
 		A.Reset()
 		for _, k := range keys {
-			i := hash(k, salt, lvl) % A.Size()
+			i := hash(k, salt, s.lvl) % sz
 
 			if coll.IsSet(i) {
-				redo = append(redo, k)
+				s.addRedo(k)
 				continue
 			}
 			A.Set(i)
 		}
 
-		bb.bits = append(bb.bits, A)
+		s.bb.append(A)
 
-		keys = redo
-		if len(keys) == 0 {
+		if s.redoLen() == 0 {
 			break
 		}
 
-		redo = redo[:0]
-		sz = uint(len(keys))
-		A = newbitVector(sz, g)
-		coll.Reset()
-		lvl++
+		keys, A = s.resetRedo()
+		s.lvl++
 
-		if lvl > MaxLevel {
-			return nil, fmt.Errorf("can't find minimal perf hash after %d tries", lvl)
+		if s.lvl > MaxLevel {
+			return fmt.Errorf("can't find minimal perf hash after %d tries", s.lvl)
+		}
+	}
+	s.bb.preComputeRank()
+	return nil
+}
+
+
+// run the algorithm in parallel
+// entry: len(keys) > MinParallelKeys
+func parallel(s *state, keys []uint64, g float64) error {
+
+	ncpu := runtime.NumCPU()
+
+	for len(keys) > 0 {
+		nkey := uint64(len(keys))
+		z := nkey / uint64(ncpu)
+		r := nkey % uint64(ncpu)
+
+		// Pre-process keys and detect colliding entries
+		s.wg.Add(ncpu)
+		for i := 0; i < ncpu; i++ {
+			x := z * uint64(i)
+			y := x + z
+			if i == (ncpu-1) { y += r }
+			go preprocess(s, keys[x:y])
+		}
+
+		// synchronization point
+		s.wg.Wait()
+
+		// Assignment step
+		s.A.Reset()
+		s.wg.Add(ncpu)
+		for i := 0; i < ncpu; i++ {
+			x := z * uint64(i)
+			y := x + z
+			if i == (ncpu-1) { y += r }
+			go assign(s, keys[x:y])
+		}
+
+		// synchronization point #2
+		s.wg.Wait()
+		s.bb.append(s.A)
+		if s.redoLen() == 0 {
+			break
+		}
+
+		keys, _ = s.resetRedo()
+		if s.lvl > MaxLevel {
+			return fmt.Errorf("can't find minimal perf hash after %d tries", s.lvl)
+		}
+
+
+		// Now, see if we have enough keys to parallelize
+		if len(keys) < MinParallelKeys {
+			return s.singleThread(keys)
 		}
 	}
 
-	bb.preComputeRank()
+	s.bb.preComputeRank()
 
-	// We reuse 'redo' to return the final index of hash keys
-	bb.Map = redo[:0]
-	for i, k := range okey {
-		j := bb.Find(k)
-		if j == 0 {
-			return nil, fmt.Errorf("can't find key %#x at %d", k, i)
+	return nil
+}
+
+
+// pre-process to detect colliding bits; parallelized
+// We have a synchronization point at the end of this loop
+func preprocess(s *state, keys []uint64) {
+	A := s.A
+	coll := s.coll
+	bb := s.bb
+	salt := bb.salt
+	sz := A.Size()
+	for _, k := range keys {
+		i := hash(k, salt, s.lvl) % sz
+
+		if coll.IsSet(i) {
+			continue
 		}
-		bb.Map = append(bb.Map, j)
+		if A.IsSet(i) {
+			coll.Set(i)
+			continue
+		}
+		A.Set(i)
+	}
+}
 
+// phase-2 -- assign non-colliding bits; this too can be parallelized
+func assign(s *state, keys []uint64) {
+	A := s.A
+	coll := s.coll
+	bb := s.bb
+	salt := bb.salt
+	sz := A.Size()
+	for _, k := range keys {
+		i := hash(k, salt, s.lvl) % sz
+
+		if coll.IsSet(i) {
+			s.addRedo(k)
+			continue
+		}
+		A.Set(i)
 	}
 
-	return bb, nil
 }
 
 // Find returns a unique integer representing the minimal hash for key 'k'.
@@ -165,6 +281,47 @@ func (bb *BBHash) preComputeRank() {
 		pop += bv.ComputeRank()
 	}
 }
+
+
+// append to bits
+func (bb *BBHash) append(a *bitVector) {
+	bb.Lock()
+	bb.bits = append(bb.bits, a)
+	bb.Unlock()
+}
+
+
+// add k to redo list
+func (s *state) addRedo(k uint64) {
+	s.Lock()
+	s.redo = append(s.redo, k)
+	s.Unlock()
+}
+
+func (s *state) redoLen() int {
+	s.Lock()
+	n := len(s.redo)
+	s.Unlock()
+
+	return n
+}
+
+// Reset the redo list and go to the next level of bitmap.
+// returns the list of keys we need to redo.
+func (s *state) resetRedo() ([]uint64, *bitVector) {
+	s.Lock()
+
+	keys := s.redo
+	s.redo = s.redo[:0]
+	s.A = newbitVector(uint(len(keys)), s.g)
+	s.coll.Reset()
+	s.lvl++
+
+	s.Unlock()
+
+	return keys, s.A
+}
+
 
 // One round of Zi Long Tan's superfast hash
 func hash(key, salt uint64, lvl uint) uint64 {
