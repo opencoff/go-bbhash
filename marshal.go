@@ -70,10 +70,9 @@ func (bb *BBHash) MarshalBinary(w io.Writer) error {
 	return nil
 }
 
-
 // MarshalBinarySize returns the size of the marshaled bbhash (in bytes)
 func (bb *BBHash) MarshalBinarySize() uint64 {
-	var z uint64 = 4 * 8  // header
+	var z uint64 = 4 * 8 // header
 
 	for _, bv := range bb.bits {
 		z += bv.MarshalBinarySize()

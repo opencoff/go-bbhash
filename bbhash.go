@@ -23,28 +23,24 @@ import (
 
 // BBHash represents a computed minimal perfect hash for a given set of keys.
 type BBHash struct {
-	sync.Mutex
-
 	bits  []*bitVector
 	ranks []uint64
 	salt  uint64
 }
 
-
 // state used by go-routines when we concurrentize the algorithm
 type state struct {
 	sync.Mutex
 
-	A *bitVector
+	A    *bitVector
 	coll *bitVector
-	redo  []uint64
+	redo []uint64
 
-	lvl  uint
+	lvl uint
 
 	bb *BBHash
 
-	wg sync.WaitGroup
-	g  float64  // gamma
+	g float64 // gamma
 }
 
 // Gamma is an expansion factor for each of the bitvectors we build.
@@ -72,7 +68,6 @@ func New(g float64, keys []uint64) (*BBHash, error) {
 	return s.bb, nil
 }
 
-
 // NewConcurrent creates a new minimal hash function to represent the ekeys in 'keys'.
 // This gives callers explicit control over when to use a concurrent algorithm vs. serial.
 func NewConcurrent(g float64, keys []uint64) (*BBHash, error) {
@@ -83,7 +78,6 @@ func NewConcurrent(g float64, keys []uint64) (*BBHash, error) {
 	}
 	return s.bb, nil
 }
-
 
 // Find returns a unique integer representing the minimal hash for key 'k'.
 // The return value is meaningful ONLY for keys in the original key set (provided
@@ -122,7 +116,6 @@ func newState(nkeys int, g float64) *state {
 	return s
 }
 
-
 // single-threaded serial invocation of the BBHash algorithm
 func (s *state) singleThread(keys []uint64) error {
 	A := s.A
@@ -133,7 +126,7 @@ func (s *state) singleThread(keys []uint64) error {
 		A.Reset()
 		assign(s, keys)
 
-		keys, A = s.appendA()
+		keys, A = s.nextLevel()
 		if keys == nil {
 			break
 		}
@@ -145,7 +138,6 @@ func (s *state) singleThread(keys []uint64) error {
 	s.bb.preComputeRank()
 	return nil
 }
-
 
 // pre-process to detect colliding bits; concurrentificated
 // We have a synchronization point at the end of this loop
@@ -176,7 +168,7 @@ func assign(s *state, keys []uint64) {
 	coll := s.coll
 	salt := s.bb.salt
 	sz := A.Size()
-	redo := make([]uint64, 0, len(keys) / 4)
+	redo := make([]uint64, 0, len(keys)/4)
 	for _, k := range keys {
 		i := hash(k, salt, s.lvl) % sz
 
@@ -187,48 +179,23 @@ func assign(s *state, keys []uint64) {
 		A.Set(i)
 	}
 
-	s.appendRedo(redo)
-}
-
-
-// Stringer interface for BBHash
-func (bb BBHash) String() string {
-	var b bytes.Buffer
-
-	b.WriteString(fmt.Sprintf("BBHash: salt %#x; %d levels\n", bb.salt, len(bb.bits)))
-
-	for i, bv := range bb.bits {
-		b.WriteString(fmt.Sprintf("  %d: %d bits\n", i, bv.Size()))
-	}
-
-	return b.String()
-}
-
-
-// Precompute ranks for each level so we can answer queries quickly.
-func (bb *BBHash) preComputeRank() {
-	var pop uint64
-	bb.ranks = make([]uint64, len(bb.bits))
-
-	// We omit the first level in rank calculation; this avoids a special
-	// case in Find() when we are looking at elements in level-0.
-	for l, bv := range bb.bits {
-		bb.ranks[l] = pop
-		pop += bv.ComputeRank()
+	if len(redo) > 0 {
+		s.appendRedo(redo)
 	}
 }
 
 // add the local copy of 'redo' list to the central list.
 func (s *state) appendRedo(k []uint64) {
+	k = shuffle(k)
+
 	s.Lock()
 	s.redo = append(s.redo, k...)
 	s.Unlock()
 }
 
-
 // append the current A to the bits vector and begin new iteration
 // return new keys and a new A
-func (s *state) appendA() ([]uint64, *bitVector) {
+func (s *state) nextLevel() ([]uint64, *bitVector) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -247,6 +214,31 @@ func (s *state) appendA() ([]uint64, *bitVector) {
 	return keys, s.A
 }
 
+// Stringer interface for BBHash
+func (bb BBHash) String() string {
+	var b bytes.Buffer
+
+	b.WriteString(fmt.Sprintf("BBHash: salt %#x; %d levels\n", bb.salt, len(bb.bits)))
+
+	for i, bv := range bb.bits {
+		b.WriteString(fmt.Sprintf("  %d: %d bits\n", i, bv.Size()))
+	}
+
+	return b.String()
+}
+
+// Precompute ranks for each level so we can answer queries quickly.
+func (bb *BBHash) preComputeRank() {
+	var pop uint64
+	bb.ranks = make([]uint64, len(bb.bits))
+
+	// We omit the first level in rank calculation; this avoids a special
+	// case in Find() when we are looking at elements in level-0.
+	for l, bv := range bb.bits {
+		bb.ranks[l] = pop
+		pop += bv.ComputeRank()
+	}
+}
 
 // One round of Zi Long Tan's superfast hash
 func hash(key, salt uint64, lvl uint) uint64 {
@@ -255,8 +247,10 @@ func hash(key, salt uint64, lvl uint) uint64 {
 
 	h ^= mix(key)
 	h *= m
-	h  = (h << lvl) | (h >> (64 - lvl))
-	h = mix(h) ^ salt
+	h ^= mix(salt)
+	h *= m
+	h = (h << lvl) | (h >> (64 - lvl))
+	h = mix(h)
 	return h
 }
 
@@ -276,4 +270,17 @@ func rand64() uint64 {
 		panic("rand read failure")
 	}
 	return binary.BigEndian.Uint64(b[:])
+}
+
+// Fisher-yates shuffle
+func shuffle(k []uint64) []uint64 {
+	var i, n uint64
+	n = uint64(len(k))
+	for i = n - 1; i > 0; i-- {
+		j := rand64() % (i + 1)
+		u := k[i]
+		k[i] = k[j]
+		k[j] = u
+	}
+	return k
 }

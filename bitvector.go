@@ -56,7 +56,6 @@ func (b *bitVector) Set(i uint64) {
 	}
 }
 
-
 // IsSet() returns true if the bit 'i' is set, false otherwise
 func (b *bitVector) IsSet(i uint64) bool {
 	w := atomic.LoadUint64(&b.v[i/64])
@@ -133,12 +132,10 @@ func (b *bitVector) MarshalBinary(w io.Writer) error {
 	return nil
 }
 
-
 // MarshalBinarySize returns the size in bytes when this bitvector is marshaled.
 func (b *bitVector) MarshalBinarySize() uint64 {
 	return 8 * (1 + b.Words())
 }
-
 
 // unmarshalbitVector reads a previously encoded bitvector and reconstructs
 // the in-memory version.
