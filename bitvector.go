@@ -46,12 +46,8 @@ func (b *bitVector) Words() uint64 {
 
 // Set sets the bit 'i' in the bitvector
 func (b *bitVector) Set(i uint64) {
-	atomicOR(&b.v[i/64], 1 << (i % 64))
-	//b.v[i/64] |= (1 << (i % 64))
-}
-
-// atomically OR the bits in 'v' into '*pv'
-func atomicOR(pv *uint64, v uint64) {
+	pv := &b.v[i/64]
+	v := uint64(1) << (i % 64)
 	for {
 		u := atomic.LoadUint64(pv)
 		if atomic.CompareAndSwapUint64(pv, u, u|v) {
@@ -60,10 +56,10 @@ func atomicOR(pv *uint64, v uint64) {
 	}
 }
 
+
 // IsSet() returns true if the bit 'i' is set, false otherwise
 func (b *bitVector) IsSet(i uint64) bool {
 	w := atomic.LoadUint64(&b.v[i/64])
-	//w := b.v[i/64]
 	w >>= (i % 64)
 	return 1 == (uint(w) & 1)
 }
@@ -71,7 +67,6 @@ func (b *bitVector) IsSet(i uint64) bool {
 // Reset() clears all the bits in the bitvector
 func (b *bitVector) Reset() {
 	for i := range b.v {
-		//b.v[i] = 0
 		atomic.StoreUint64(&b.v[i], 0)
 	}
 }
@@ -102,12 +97,10 @@ func (b *bitVector) Rank(i uint64) uint64 {
 	for k = 0; k < x; k++ {
 		v := atomic.LoadUint64(&b.v[k])
 		r += popcount(v)
-		//r += popcount(b.v[k])
 	}
 
 	v := atomic.LoadUint64(&b.v[x])
 	r += popcount(v << (64 - y))
-	//r += popcount(b.v[x] << (64 - y))
 	return r
 }
 

@@ -18,7 +18,6 @@ import (
 
 	"crypto/rand"
 	"encoding/binary"
-	"runtime"
 	"sync"
 )
 
@@ -128,87 +127,22 @@ func newState(nkeys int, g float64) *state {
 func (s *state) singleThread(keys []uint64) error {
 	A := s.A
 
-	for len(keys) > 0 {
+	for {
+		fmt.Printf("lvl %d: %d keys\n", s.lvl, len(keys))
 		preprocess(s, keys)
 		A.Reset()
 		assign(s, keys)
 
-		s.bb.append(A)
-
-		if s.redoLen() == 0 {
+		keys, A = s.appendA()
+		if keys == nil {
 			break
 		}
-
-		keys, A = s.resetRedo()
 
 		if s.lvl > MaxLevel {
 			return fmt.Errorf("can't find minimal perf hash after %d tries", s.lvl)
 		}
 	}
 	s.bb.preComputeRank()
-	return nil
-}
-
-
-// run the BBHash algorithm concurrently on a sharded set of keys.
-// entry: len(keys) > MinParallelKeys
-func (s *state) concurrent(keys []uint64) error {
-
-	ncpu := runtime.NumCPU()
-
-	for len(keys) > 0 {
-		nkey := uint64(len(keys))
-		z := nkey / uint64(ncpu)
-		r := nkey % uint64(ncpu)
-
-		// Pre-process keys and detect colliding entries
-		s.wg.Add(ncpu)
-		for i := 0; i < ncpu; i++ {
-			x := z * uint64(i)
-			y := x + z
-			if i == (ncpu-1) { y += r }
-			go func() {
-				preprocess(s, keys[x:y])
-				s.wg.Done()
-			}()
-		}
-
-		// synchronization point
-		s.wg.Wait()
-
-		// Assignment step
-		s.A.Reset()
-		s.wg.Add(ncpu)
-		for i := 0; i < ncpu; i++ {
-			x := z * uint64(i)
-			y := x + z
-			if i == (ncpu-1) { y += r }
-			go func() {
-				assign(s, keys[x:y])
-				s.wg.Done()
-			}()
-		}
-
-		// synchronization point #2
-		s.wg.Wait()
-		s.bb.append(s.A)
-		if s.redoLen() == 0 {
-			break
-		}
-
-		keys, _ = s.resetRedo()
-		if s.lvl > MaxLevel {
-			return fmt.Errorf("can't find minimal perf hash after %d tries", s.lvl)
-		}
-
-		// Now, see if we have enough keys to concurrentize
-		if len(keys) < MinParallelKeys {
-			return s.singleThread(keys)
-		}
-	}
-
-	s.bb.preComputeRank()
-
 	return nil
 }
 
@@ -218,8 +152,7 @@ func (s *state) concurrent(keys []uint64) error {
 func preprocess(s *state, keys []uint64) {
 	A := s.A
 	coll := s.coll
-	bb := s.bb
-	salt := bb.salt
+	salt := s.bb.salt
 	sz := A.Size()
 	for _, k := range keys {
 		i := hash(k, salt, s.lvl) % sz
@@ -236,23 +169,27 @@ func preprocess(s *state, keys []uint64) {
 }
 
 // phase-2 -- assign non-colliding bits; this too can be concurrentized
+// the redo-list can be local until we finish scanning all the keys.
+// XXX "A" could also be kept local and finally merged via bitwise-union.
 func assign(s *state, keys []uint64) {
 	A := s.A
 	coll := s.coll
-	bb := s.bb
-	salt := bb.salt
+	salt := s.bb.salt
 	sz := A.Size()
+	redo := make([]uint64, 0, len(keys) / 4)
 	for _, k := range keys {
 		i := hash(k, salt, s.lvl) % sz
 
 		if coll.IsSet(i) {
-			s.addRedo(k)
+			redo = append(redo, k)
 			continue
 		}
 		A.Set(i)
 	}
 
+	s.appendRedo(redo)
 }
+
 
 // Stringer interface for BBHash
 func (bb BBHash) String() string {
@@ -281,43 +218,32 @@ func (bb *BBHash) preComputeRank() {
 	}
 }
 
-
-// append to bits
-func (bb *BBHash) append(a *bitVector) {
-	bb.Lock()
-	bb.bits = append(bb.bits, a)
-	bb.Unlock()
-}
-
-
-// add k to redo list
-func (s *state) addRedo(k uint64) {
+// add the local copy of 'redo' list to the central list.
+func (s *state) appendRedo(k []uint64) {
 	s.Lock()
-	s.redo = append(s.redo, k)
+	s.redo = append(s.redo, k...)
 	s.Unlock()
 }
 
-func (s *state) redoLen() int {
-	s.Lock()
-	n := len(s.redo)
-	s.Unlock()
 
-	return n
-}
-
-// Reset the redo list and go to the next level of bitmap.
-// returns the list of keys we need to redo.
-func (s *state) resetRedo() ([]uint64, *bitVector) {
+// append the current A to the bits vector and begin new iteration
+// return new keys and a new A
+func (s *state) appendA() ([]uint64, *bitVector) {
 	s.Lock()
+	defer s.Unlock()
+
+	s.bb.bits = append(s.bb.bits, s.A)
+	s.A = nil
 
 	keys := s.redo
+	if len(keys) == 0 {
+		return nil, nil
+	}
+
 	s.redo = s.redo[:0]
 	s.A = newbitVector(uint(len(keys)), s.g)
 	s.coll.Reset()
 	s.lvl++
-
-	s.Unlock()
-
 	return keys, s.A
 }
 
@@ -328,9 +254,10 @@ func hash(key, salt uint64, lvl uint) uint64 {
 	var h uint64 = m
 
 	h ^= mix(key)
-	h = (h << lvl) | (h >> (64 - lvl))
 	h *= m
-	return mix(h) ^ salt
+	h  = (h << lvl) | (h >> (64 - lvl))
+	h = mix(h) ^ salt
+	return h
 }
 
 // compression function for fasthash
