@@ -32,7 +32,7 @@ type BBHash struct {
 }
 
 
-// state used by go-routines when we parallelize the algorithm
+// state used by go-routines when we concurrentize the algorithm
 type state struct {
 	sync.Mutex
 
@@ -58,14 +58,56 @@ const Gamma float64 = 2.0
 // probability of collision.
 const MaxLevel uint = 200
 
-// Minimum number of keys before we use a parallel algorithm
-const MinParallelKeys int = 100000
+// Minimum number of keys before we use a concurrent algorithm
+const MinParallelKeys int = 20000
 
 // New creates a new minimal hash function to represent the keys in 'keys'.
-// Upon successful return from this function, the Map element of BBHash will
-// be appropriately populated.
+// Once the construction is complete, callers can use "Find()" to find the
+// unique mapping for each key in 'keys'.
 func New(g float64, keys []uint64) (*BBHash, error) {
-	sz := uint(len(keys))
+	s := newState(len(keys), g)
+	err := s.singleThread(keys)
+	if err != nil {
+		return nil, err
+	}
+	return s.bb, nil
+}
+
+
+// NewConcurrent creates a new minimal hash function to represent the ekeys in 'keys'.
+// This gives callers explicit control over when to use a concurrent algorithm vs. serial.
+func NewConcurrent(g float64, keys []uint64) (*BBHash, error) {
+	s := newState(len(keys), g)
+	err := s.concurrent(keys)
+	if err != nil {
+		return nil, err
+	}
+	return s.bb, nil
+}
+
+
+// Find returns a unique integer representing the minimal hash for key 'k'.
+// The return value is meaningful ONLY for keys in the original key set (provided
+// at the time of construction of the minimal-hash).
+// If the key is in the original key-set
+func (bb *BBHash) Find(k uint64) uint64 {
+	for lvl, bv := range bb.bits {
+		i := hash(k, bb.salt, uint(lvl)) % bv.Size()
+
+		if !bv.IsSet(i) {
+			continue
+		}
+
+		rank := 1 + bb.ranks[lvl] + bv.Rank(i)
+		return rank
+	}
+
+	return 0
+}
+
+// setup state for serial or concurrent execution
+func newState(nkeys int, g float64) *state {
+	sz := uint(nkeys)
 
 	bb := &BBHash{
 		salt: rand64(),
@@ -78,46 +120,18 @@ func New(g float64, keys []uint64) (*BBHash, error) {
 		bb:   bb,
 		g:    g,
 	}
-
-	err := s.singleThread(keys)
-	if err != nil {
-		return nil, err
-	}
-	return bb, nil
+	return s
 }
 
 
+// single-threaded serial invocation of the BBHash algorithm
 func (s *state) singleThread(keys []uint64) error {
 	A := s.A
-	salt := s.bb.salt
-	coll := s.coll
 
 	for len(keys) > 0 {
-		sz := A.Size()
-		for _, k := range keys {
-			i := hash(k, salt, s.lvl) % sz
-
-			if coll.IsSet(i) {
-				continue
-			}
-			if A.IsSet(i) {
-				coll.Set(i)
-				continue
-			}
-			A.Set(i)
-		}
-
-		// Sadly, no way to avoid scanning the keyspace _twice_.
+		preprocess(s, keys)
 		A.Reset()
-		for _, k := range keys {
-			i := hash(k, salt, s.lvl) % sz
-
-			if coll.IsSet(i) {
-				s.addRedo(k)
-				continue
-			}
-			A.Set(i)
-		}
+		assign(s, keys)
 
 		s.bb.append(A)
 
@@ -126,7 +140,6 @@ func (s *state) singleThread(keys []uint64) error {
 		}
 
 		keys, A = s.resetRedo()
-		s.lvl++
 
 		if s.lvl > MaxLevel {
 			return fmt.Errorf("can't find minimal perf hash after %d tries", s.lvl)
@@ -137,9 +150,9 @@ func (s *state) singleThread(keys []uint64) error {
 }
 
 
-// run the algorithm in parallel
+// run the BBHash algorithm concurrently on a sharded set of keys.
 // entry: len(keys) > MinParallelKeys
-func parallel(s *state, keys []uint64, g float64) error {
+func (s *state) concurrent(keys []uint64) error {
 
 	ncpu := runtime.NumCPU()
 
@@ -154,7 +167,10 @@ func parallel(s *state, keys []uint64, g float64) error {
 			x := z * uint64(i)
 			y := x + z
 			if i == (ncpu-1) { y += r }
-			go preprocess(s, keys[x:y])
+			go func() {
+				preprocess(s, keys[x:y])
+				s.wg.Done()
+			}()
 		}
 
 		// synchronization point
@@ -167,7 +183,10 @@ func parallel(s *state, keys []uint64, g float64) error {
 			x := z * uint64(i)
 			y := x + z
 			if i == (ncpu-1) { y += r }
-			go assign(s, keys[x:y])
+			go func() {
+				assign(s, keys[x:y])
+				s.wg.Done()
+			}()
 		}
 
 		// synchronization point #2
@@ -182,8 +201,7 @@ func parallel(s *state, keys []uint64, g float64) error {
 			return fmt.Errorf("can't find minimal perf hash after %d tries", s.lvl)
 		}
 
-
-		// Now, see if we have enough keys to parallelize
+		// Now, see if we have enough keys to concurrentize
 		if len(keys) < MinParallelKeys {
 			return s.singleThread(keys)
 		}
@@ -195,7 +213,7 @@ func parallel(s *state, keys []uint64, g float64) error {
 }
 
 
-// pre-process to detect colliding bits; parallelized
+// pre-process to detect colliding bits; concurrentificated
 // We have a synchronization point at the end of this loop
 func preprocess(s *state, keys []uint64) {
 	A := s.A
@@ -217,7 +235,7 @@ func preprocess(s *state, keys []uint64) {
 	}
 }
 
-// phase-2 -- assign non-colliding bits; this too can be parallelized
+// phase-2 -- assign non-colliding bits; this too can be concurrentized
 func assign(s *state, keys []uint64) {
 	A := s.A
 	coll := s.coll
@@ -234,25 +252,6 @@ func assign(s *state, keys []uint64) {
 		A.Set(i)
 	}
 
-}
-
-// Find returns a unique integer representing the minimal hash for key 'k'.
-// The return value is meaningful ONLY for keys in the original key set (provided 
-// at the time of construction of the minimal-hash).
-// If the key is in the original key-set
-func (bb *BBHash) Find(k uint64) uint64 {
-	for lvl, bv := range bb.bits {
-		i := hash(k, bb.salt, uint(lvl)) % bv.Size()
-
-		if !bv.IsSet(i) {
-			continue
-		}
-
-		rank := 1 + bb.ranks[lvl] + bv.Rank(i)
-		return rank
-	}
-
-	return 0
 }
 
 // Stringer interface for BBHash
