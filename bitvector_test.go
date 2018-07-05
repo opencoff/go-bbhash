@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"runtime"
 	"testing"
+	"math/rand"
+	"sync"
 )
 
 func newAsserter(t *testing.T) func(cond bool, msg string, args ...interface{}) {
@@ -49,6 +51,95 @@ func Test0(t *testing.T) {
 	}
 }
 
+
+// Test concurrent bitvector stuff
+func TestConcurrentRandom(t *testing.T) {
+	assert := newAsserter(t)
+	ncpu := runtime.NumCPU() * 2
+
+	br := newbitVector(1000, 1.0)
+	bw := newbitVector(1000, 1.0)
+	n := br.Size()
+
+	for i := uint64(0); i < n; i++ {
+		if 1 == (i & 1) {
+			br.Set(i)
+		}
+	}
+
+	verify := make([][]uint64, ncpu)
+	var w sync.WaitGroup
+	w.Add(ncpu)
+	for i := 0; i < ncpu; i++ {
+		go func(i int, a, b *bitVector) {
+			defer w.Done()
+
+			n := uint64(a.Size()) * 16
+			idx := make([]uint64, 0, n)
+			sz := a.Size()
+
+			for j := uint64(0); j < n; j++ {
+				r := rand.Uint64() % sz
+				if a.IsSet(r) {
+					b.Set(r)
+					idx = append(idx, r)
+				}
+			}
+
+			verify[i] = idx
+		}(i, br, bw)
+	}
+
+	w.Wait()
+
+	// Now every entry in verify is set.
+	for _, v := range verify {
+		for _, k := range v {
+			assert(bw.IsSet(k), "%d is not set", k)
+		}
+	}
+}
+
+
+func TestConcurrent(t *testing.T) {
+	assert := newAsserter(t)
+	ncpu := runtime.NumCPU() * 1
+
+	br := newbitVector(1000, 1.0)
+	bw := newbitVector(1000, 1.0)
+	n := br.Size()
+
+	for i := uint64(0); i < n; i++ {
+		if 1 == (i & 1) {
+			br.Set(i)
+		}
+	}
+
+	var w sync.WaitGroup
+	w.Add(ncpu)
+	for i := 0; i < ncpu; i++ {
+		go func(i int, a, b *bitVector) {
+			defer w.Done()
+
+			n := uint64(a.Size())
+			for j := uint64(0); j < n; j++ {
+				if a.IsSet(j) {
+					b.Set(j)
+				}
+			}
+		}(i, br, bw)
+	}
+
+	w.Wait()
+
+	// Now every entry in verify is set.
+	for i := uint64(0); i < n; i++ {
+		if br.IsSet(i) {
+			assert(bw.IsSet(i), "%d is not set", i)
+		}
+	}
+}
+
 func TestMarshal(t *testing.T) {
 	assert := newAsserter(t)
 
@@ -81,3 +172,4 @@ func TestMarshal(t *testing.T) {
 	}
 
 }
+
