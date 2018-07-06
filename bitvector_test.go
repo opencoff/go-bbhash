@@ -1,5 +1,4 @@
 // bitvector_test.go -- test suite for bitvector
-//
 
 package bbhash
 
