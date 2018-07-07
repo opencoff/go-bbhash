@@ -33,12 +33,50 @@ Assuming you have read your keys, hashed them into `uint64`, this is how you can
 	bb, err := bbhash.New(2.0, keys)
 	if err != nil { panic(err) }
 
-	// Now, bb.Map[] is setup with the right perfect-hash mapping for each key.
+	// Now, call Find() with each key to gets its unique mapping.
+    // Note: Find() returns values in the range closed-interval [1, len(keys)]
 	for i, k := range keys {
-		fmt.Printf("%d: %#x maps to %d\n", i, k, bb.Map[i])
+        j := bb.Find(k)
+		fmt.Printf("%d: %#x maps to %d\n", i, k, j)
 	}
 
 ```
+
+### Storing the generated minimal hash to disk
+This implementation has the ability to marshal/unmarshal the
+generated Minimal Perfect Hash to disk via two functions:
+
+* `Marshal()` -- marshal an instance of generated bbhash into a
+  supplied `io.Writer`.
+
+  ```go
+
+        bb, err := bbhash.New(2.0, keys)
+        if err != nil { panic(err) }
+
+        var buf bytes.Buffer
+
+        err = bb.Marshal(&buf)
+        if err != nil { panic(err) }
+
+        // Now, write buf.Bytes() to persistent storage.
+  ```
+
+* `UnmarshalBBHash()` -- unmarshal data from an `io.Reader` into an instance
+  of `bbhash`. This function is a package level function.
+
+  ```go
+
+    bb, err := bbhash.UnmarshalBBHash(ioreader)
+    if err != nil { panic(err) }
+
+    // Now use 'bb' as an initialized instance of BBHash.
+  ```
+
+
+Note that the marshaling routine does NOT add any sort of checksum
+to protect/verify the integrity of the marshaled data. It is upto
+the caller to add such checks.
 
 ## Implementation Notes
 
@@ -49,10 +87,6 @@ Assuming you have read your keys, hashed them into `uint64`, this is how you can
 
 * The perfect-hash index for each key is "1" based (i.e., it is in the closed interval
   `[1, len(keys)]`.
-
-* The generated perfect hash db can be marshaled and stored in durable storage. The callers
-  are responsible for using a checksum or other means to guarantee the integrity of the 
-  marshaled data.
 
 
 ## License
