@@ -121,7 +121,7 @@ func (s *state) singleThread(keys []uint64) error {
 	A := s.A
 
 	for {
-		fmt.Printf("lvl %d: %d keys\n", s.lvl, len(keys))
+		//fmt.Printf("lvl %d: %d keys\n", s.lvl, len(keys))
 		preprocess(s, keys)
 		A.Reset()
 		assign(s, keys)
