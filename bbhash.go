@@ -27,6 +27,7 @@ type BBHash struct {
 	bits  []*bitVector
 	ranks []uint64
 	salt  uint64
+	g     float64	// gamma - rankvector size expansion factor
 }
 
 // state used by go-routines when we concurrentize the algorithm
@@ -40,8 +41,6 @@ type state struct {
 	lvl uint
 
 	bb *BBHash
-
-	g float64 // gamma
 }
 
 // Gamma is an expansion factor for each of the bitvectors we build.
@@ -61,26 +60,54 @@ const MinParallelKeys int = 20000
 const debug bool = false
 
 // New creates a new minimal hash function to represent the keys in 'keys'.
+// This constructor selects a faster concurrent algorithm if the number of
+// keys are greater than 'MinParallelKeys'.
 // Once the construction is complete, callers can use "Find()" to find the
 // unique mapping for each key in 'keys'.
 func New(g float64, keys []uint64) (*BBHash, error) {
-	s := newState(len(keys), g)
+
+	bb := &BBHash{
+		salt: rand64(),
+		g:    g,
+	}
+
+	err := bb.addMore(keys)
+	if err != nil {
+		return nil, err
+	}
+
+	return bb, nil
+}
+
+
+// NewSerial creates a new minimal hash function to represent the keys in 'keys'.
+// This constructor explicitly uses a single-threaded (non-concurrent) construction.
+func NewSerial(g float64, keys []uint64) (*BBHash, error) {
+	bb := &BBHash{
+		salt: rand64(),
+		g:    g,
+	}
+	s := bb.newState(len(keys))
 	err := s.singleThread(keys)
 	if err != nil {
 		return nil, err
 	}
-	return s.bb, nil
+	return bb, nil
 }
 
-// NewConcurrent creates a new minimal hash function to represent the ekeys in 'keys'.
+// NewConcurrent creates a new minimal hash function to represent the keys in 'keys'.
 // This gives callers explicit control over when to use a concurrent algorithm vs. serial.
 func NewConcurrent(g float64, keys []uint64) (*BBHash, error) {
-	s := newState(len(keys), g)
+	bb := &BBHash{
+		salt: rand64(),
+		g:    g,
+	}
+	s := bb.newState(len(keys))
 	err := s.concurrent(keys)
 	if err != nil {
 		return nil, err
 	}
-	return s.bb, nil
+	return bb, nil
 }
 
 // Find returns a unique integer representing the minimal hash for key 'k'.
@@ -102,20 +129,28 @@ func (bb *BBHash) Find(k uint64) uint64 {
 	return 0
 }
 
-// setup state for serial or concurrent execution
-func newState(nkeys int, g float64) *state {
-	sz := uint(nkeys)
 
-	bb := &BBHash{
-		salt: rand64(),
+// Internal function to add more keys to an existing bbhash instance
+// Callers must take care NOT to add duplicate keys.
+func (bb *BBHash) addMore(keys []uint64) error {
+	n := len(keys)
+	s := bb.newState(n)
+
+	if n > MinParallelKeys {
+		return s.concurrent(keys)
+	} else {
+		return s.singleThread(keys)
 	}
+}
 
+// setup state for serial or concurrent execution
+func (bb *BBHash) newState(nkeys int) *state {
+	sz := uint(nkeys)
 	s := &state{
-		A:    newbitVector(sz, g),
-		coll: newbitVector(sz, g),
+		A:    newbitVector(sz, bb.g),
+		coll: newbitVector(sz, bb.g),
 		redo: make([]uint64, 0, sz),
 		bb:   bb,
-		g:    g,
 	}
 
 	//printf("bbhash: salt %#x, %d keys", bb.salt, nkeys)
@@ -214,7 +249,7 @@ func (s *state) nextLevel() ([]uint64, *bitVector) {
 	}
 
 	s.redo = s.redo[:0]
-	s.A = newbitVector(uint(len(keys)), s.g)
+	s.A = newbitVector(uint(len(keys)), s.bb.g)
 	s.coll.Reset()
 	s.lvl++
 	return keys, s.A
