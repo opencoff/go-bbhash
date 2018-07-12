@@ -15,6 +15,7 @@ package bbhash
 import (
 	"bytes"
 	"fmt"
+	"os"
 
 	"crypto/rand"
 	"encoding/binary"
@@ -55,6 +56,9 @@ const MaxLevel uint = 200
 
 // Minimum number of keys before we use a concurrent algorithm
 const MinParallelKeys int = 20000
+
+// set to true for verbose debug
+const debug bool = false
 
 // New creates a new minimal hash function to represent the keys in 'keys'.
 // Once the construction is complete, callers can use "Find()" to find the
@@ -113,6 +117,8 @@ func newState(nkeys int, g float64) *state {
 		bb:   bb,
 		g:    g,
 	}
+
+	//printf("bbhash: salt %#x, %d keys", bb.salt, nkeys)
 	return s
 }
 
@@ -121,7 +127,7 @@ func (s *state) singleThread(keys []uint64) error {
 	A := s.A
 
 	for {
-		//fmt.Printf("lvl %d: %d keys\n", s.lvl, len(keys))
+		//printf("lvl %d: %d keys", s.lvl, len(keys))
 		preprocess(s, keys)
 		A.Reset()
 		assign(s, keys)
@@ -186,22 +192,22 @@ func assign(s *state, keys []uint64) {
 
 // add the local copy of 'redo' list to the central list.
 func (s *state) appendRedo(k []uint64) {
-	k = shuffle(k)
 
 	s.Lock()
 	s.redo = append(s.redo, k...)
+	//printf("lvl %d: redo += %d keys", s.lvl, len(k))
 	s.Unlock()
 }
 
 // append the current A to the bits vector and begin new iteration
-// return new keys and a new A
+// return new keys and a new A.
+// NB: This is *always* called from a single-threaded context
+//     (i.e., synchronization point).
 func (s *state) nextLevel() ([]uint64, *bitVector) {
-	s.Lock()
-	defer s.Unlock()
-
 	s.bb.bits = append(s.bb.bits, s.A)
 	s.A = nil
 
+	//printf("lvl %d: next-step: remaining: %d keys", s.lvl, len(s.redo))
 	keys := s.redo
 	if len(keys) == 0 {
 		return nil, nil
@@ -221,7 +227,8 @@ func (bb BBHash) String() string {
 	b.WriteString(fmt.Sprintf("BBHash: salt %#x; %d levels\n", bb.salt, len(bb.bits)))
 
 	for i, bv := range bb.bits {
-		b.WriteString(fmt.Sprintf("  %d: %d bits\n", i, bv.Size()))
+		sz := humansize(bv.Words() * 8)
+		b.WriteString(fmt.Sprintf("  %d: %d bits (%s)\n", i, bv.Size(), sz))
 	}
 
 	return b.String()
@@ -249,7 +256,8 @@ func hash(key, salt uint64, lvl uint) uint64 {
 	h *= m
 	h ^= mix(salt)
 	h *= m
-	h = (h << lvl) | (h >> (64 - lvl))
+	h ^= mix(uint64(lvl))
+	h *= m
 	h = mix(h)
 	return h
 }
@@ -272,15 +280,16 @@ func rand64() uint64 {
 	return binary.BigEndian.Uint64(b[:])
 }
 
-// Fisher-yates shuffle
-func shuffle(k []uint64) []uint64 {
-	var i, n uint64
-	n = uint64(len(k))
-	for i = n - 1; i > 0; i-- {
-		j := rand64() % (i + 1)
-		u := k[i]
-		k[i] = k[j]
-		k[j] = u
+func printf(f string, v ...interface{}) {
+	if !debug {
+		return
 	}
-	return k
+
+	s := fmt.Sprintf(f, v...)
+	if n := len(s); s[n-1] != '\n' {
+		s += "\n"
+	}
+
+	os.Stdout.WriteString(s)
+	os.Stdout.Sync()
 }

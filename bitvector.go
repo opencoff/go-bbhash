@@ -24,11 +24,12 @@ type bitVector struct {
 // The value 'g' is an expansion factor (typically > 1.0). The resulting size
 // is rounded-up to the next multiple of 64.
 func newbitVector(size uint, g float64) *bitVector {
-	sz := uint(float64(size) * g)
+	sz := uint64(float64(size) * g)
 	sz += 63
-	sz /= 64
+	sz &= ^(uint64(63))
+	words := sz / 64
 	bv := &bitVector{
-		v: make([]uint64, sz),
+		v: make([]uint64, words),
 	}
 
 	return bv

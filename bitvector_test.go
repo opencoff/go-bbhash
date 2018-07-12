@@ -5,10 +5,10 @@ package bbhash
 import (
 	"bytes"
 	"fmt"
-	"runtime"
-	"testing"
 	"math/rand"
+	"runtime"
 	"sync"
+	"testing"
 )
 
 func newAsserter(t *testing.T) func(cond bool, msg string, args ...interface{}) {
@@ -49,7 +49,6 @@ func Test0(t *testing.T) {
 		}
 	}
 }
-
 
 // Test concurrent bitvector stuff
 func TestConcurrentRandom(t *testing.T) {
@@ -98,7 +97,6 @@ func TestConcurrentRandom(t *testing.T) {
 		}
 	}
 }
-
 
 func TestConcurrent(t *testing.T) {
 	assert := newAsserter(t)
@@ -171,4 +169,3 @@ func TestMarshal(t *testing.T) {
 	}
 
 }
-

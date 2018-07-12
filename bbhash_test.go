@@ -3,13 +3,11 @@
 package bbhash
 
 import (
-	"testing"
 	"bytes"
+	"testing"
 
 	"github.com/opencoff/go-fasthash"
 )
-
-
 
 var keyw = []string{
 	"expectoration",
@@ -23,7 +21,6 @@ var keyw = []string{
 	"endocrinotherapy",
 	"quicksandy",
 }
-
 
 func TestSimple(t *testing.T) {
 	assert := newAsserter(t)
@@ -43,7 +40,6 @@ func TestSimple(t *testing.T) {
 		assert(j <= uint64(len(keys)), "key %d <%#x> mapping %d out-of-bounds", i, k, j)
 	}
 }
-
 
 func TestBBMarshal(t *testing.T) {
 	assert := newAsserter(t)
@@ -65,10 +61,10 @@ func TestBBMarshal(t *testing.T) {
 	assert(err == nil, "unmarshal failed: %s", err)
 
 	assert(len(b.bits) == len(b2.bits), "rank-vector len mismatch (exp %d, saw %d)",
-			len(b.bits), len(b2.bits))
+		len(b.bits), len(b2.bits))
 
 	assert(len(b.ranks) == len(b2.ranks), "rank-helper len mismatch (exp %d, saw %d)",
-			len(b.ranks), len(b2.ranks))
+		len(b.ranks), len(b2.ranks))
 
 	assert(b.salt == b2.salt, "salt mismatch (exp %#x, saw %#x)", b.salt, b2.salt)
 
@@ -77,7 +73,7 @@ func TestBBMarshal(t *testing.T) {
 		bv := b2.bits[i]
 
 		assert(av.Size() == bv.Size(), "level-%d, bitvector len mismatch (exp %d, saw %d)",
-				i, av.Size(), bv.Size())
+			i, av.Size(), bv.Size())
 
 		var j uint64
 		for j = 0; j < av.Words(); j++ {
@@ -85,7 +81,6 @@ func TestBBMarshal(t *testing.T) {
 				i, av.v[j], bv.v[j])
 		}
 	}
-
 
 	for i := range b.ranks {
 		ar := b.ranks[i]

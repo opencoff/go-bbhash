@@ -22,6 +22,7 @@ import (
 func (s *state) concurrent(keys []uint64) error {
 
 	ncpu := runtime.NumCPU()
+	A := s.A
 
 	for {
 		nkey := uint64(len(keys))
@@ -40,7 +41,7 @@ func (s *state) concurrent(keys []uint64) error {
 				y += r
 			}
 			go func(x, y uint64) {
-				//fmt.Printf("cpu %d; Pre-Process shard %d:%d\n", i, x, y)
+				//printf("lvl %d: cpu %d; Pre-process shard %d:%d", s.lvl, i, x, y)
 				preprocess(s, keys[x:y])
 				wg.Done()
 			}(x, y)
@@ -50,7 +51,7 @@ func (s *state) concurrent(keys []uint64) error {
 		wg.Wait()
 
 		// Assignment step
-		s.A.Reset()
+		A.Reset()
 		wg.Add(ncpu)
 		for i := 0; i < ncpu; i++ {
 			i := i
@@ -60,7 +61,7 @@ func (s *state) concurrent(keys []uint64) error {
 				y += r
 			}
 			go func(x, y uint64) {
-				//fmt.Printf("cpu %d; Assign shard %d:%d\n", i, x, y)
+				//printf("lvl %d: cpu %d; Assign shard %d:%d", s.lvl, i, x, y)
 				assign(s, keys[x:y])
 				wg.Done()
 			}(x, y)
@@ -68,7 +69,7 @@ func (s *state) concurrent(keys []uint64) error {
 
 		// synchronization point #2
 		wg.Wait()
-		keys, _ = s.nextLevel()
+		keys, A = s.nextLevel()
 		if keys == nil {
 			break
 		}
