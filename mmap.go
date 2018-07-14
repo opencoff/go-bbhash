@@ -14,7 +14,6 @@ import (
 	"unsafe"
 )
 
-
 // map 'n' uint64s at offset 'off'
 func MmapUint64(fd int, off uint64, n int, prot, flags int) ([]uint64, error) {
 	sz := n * 8

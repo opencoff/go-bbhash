@@ -16,8 +16,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 	"runtime"
+	"strings"
 	"sync"
 
 	"github.com/dchest/siphash"
@@ -52,20 +52,20 @@ type DBWriter struct {
 
 	bb *BBHash
 
-	fntmp string
-	fn    string
+	fntmp  string
+	fn     string
 	frozen bool
 
-	g   float64 // gamma
+	g float64 // gamma
 }
 
 type header struct {
-	magic [4]byte   // file magic
-	resv00 uint32   // reserved - in future flags, algo choices etc.
+	magic  [4]byte // file magic
+	resv00 uint32  // reserved - in future flags, algo choices etc.
 
-	salt  uint64    // hash salt
-	nkeys uint64    // number of keys in the system
-	offtbl uint64	// file location where offset-table starts
+	salt   uint64 // hash salt
+	nkeys  uint64 // number of keys in the system
+	offtbl uint64 // file location where offset-table starts
 
 	resv01 [4]uint64
 }
@@ -88,7 +88,7 @@ type record struct {
 // and readers will open it using NewDBReader() to do constant time lookups
 // of key to value.
 func NewDBWriter(fn string) (*DBWriter, error) {
-	tmp := fmt.Sprint("%s.tmp.%d", fn, rand64())
+	tmp := fmt.Sprintf("%s.tmp.%d", fn, rand64())
 
 	fd, err := os.OpenFile(tmp, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
@@ -121,6 +121,35 @@ func NewDBWriter(fn string) (*DBWriter, error) {
 	binary.BigEndian.PutUint64(w.saltkey[8:], ^w.salt)
 
 	return w, nil
+}
+
+// AddKeyVals adds a series of key-value matched pairs to the db. If they are of
+// unequal length, only the smaller of the lengths are used. Records with duplicate
+// keys are discarded.
+// Returns number of records added.
+func (w *DBWriter) AddKeyVals(keys []string, vals []string) (uint64, error) {
+
+	n := len(keys)
+	if len(vals) < n {
+		n = len(vals)
+	}
+
+	var z uint64
+	for i := 0; i < n; i++ {
+		r := &record{
+			key: []byte(keys[i]),
+			val: []byte(vals[i]),
+		}
+		ok, err := w.addRecord(r)
+		if err != nil {
+			return z, err
+		}
+		if ok {
+			z++
+		}
+	}
+
+	return z, nil
 }
 
 // AddTextFile adds contents from text file 'fn' where key and value are separated
@@ -273,10 +302,10 @@ func (w *DBWriter) Freeze(g float64) error {
 		offtbl: offtbl,
 	}
 	/*
-	hdr.magic[0] = 'B'
-	hdr.magic[1] = 'B'
-	hdr.magic[2] = 'H'
-	hdr.magic[3] = 'H'
+		hdr.magic[0] = 'B'
+		hdr.magic[1] = 'B'
+		hdr.magic[2] = 'H'
+		hdr.magic[3] = 'H'
 	*/
 
 	hdr.encode(ehdr[:])
@@ -284,8 +313,8 @@ func (w *DBWriter) Freeze(g float64) error {
 	w.fd.Seek(int64(offtbl), 0)
 
 	// We won't encode concurrently and write to disk for two reasons:
-	// 1. To make the I/O safe - we have to encode an entire worker's worth of offsets.
-	//    This costs additional memory.
+	// 1. To make the I/O safe - we have to encode an entire worker's worth of offsets;
+	//    this costs additional memory.
 	// 2. There is no safe, portable way to do concurrent disk write without corrupting the
 	//    file.
 
@@ -346,17 +375,17 @@ func (w *DBWriter) Freeze(g float64) error {
 	return nil
 }
 
-
-func (h *header) encode (b []byte) {
+func (h *header) encode(b []byte) {
 	be := binary.BigEndian
 	copy(b[:4], h.magic[:])
 
 	i := 8
-	be.PutUint64(b[i:i+8], h.salt);  i += 8
-	be.PutUint64(b[i:i+8], h.nkeys); i += 8
+	be.PutUint64(b[i:i+8], h.salt)
+	i += 8
+	be.PutUint64(b[i:i+8], h.nkeys)
+	i += 8
 	be.PutUint64(b[i:i+8], h.offtbl)
 }
-
 
 // Abort stops the construction of the perfect hash db
 func (w *DBWriter) Abort() {
@@ -364,15 +393,13 @@ func (w *DBWriter) Abort() {
 	os.Remove(w.fntmp)
 }
 
-
-func (w *DBWriter) buildOffsets(bb *BBHash, offset []uint64) (error) {
+func (w *DBWriter) buildOffsets(bb *BBHash, offset []uint64) error {
 	if len(w.keys) >= MinParallelKeys {
 		return w.buildOffsetsConcurrent(bb, offset)
 	}
 
 	return w.buildOffsetSingle(bb, offset, w.keys)
 }
-
 
 func (w *DBWriter) buildOffsetSingle(bb *BBHash, offset, keys []uint64) error {
 	for _, k := range keys {
@@ -388,9 +415,8 @@ func (w *DBWriter) buildOffsetSingle(bb *BBHash, offset, keys []uint64) error {
 	return nil
 }
 
-
 // concurrent construction of the offset table.
-func (w *DBWriter) buildOffsetsConcurrent(bb *BBHash, offset []uint64) (error) {
+func (w *DBWriter) buildOffsetsConcurrent(bb *BBHash, offset []uint64) error {
 	ncpu := runtime.NumCPU()
 
 	n := len(w.keys) / ncpu
@@ -410,7 +436,7 @@ func (w *DBWriter) buildOffsetsConcurrent(bb *BBHash, offset []uint64) (error) {
 	for i := 0; i < ncpu; i++ {
 		x := n * i
 		y := x + n
-		if i == (ncpu-1) {
+		if i == (ncpu - 1) {
 			y += r
 		}
 
@@ -425,42 +451,51 @@ func (w *DBWriter) buildOffsetsConcurrent(bb *BBHash, offset []uint64) (error) {
 	}
 
 	// XXX What is the design pattern for returning errors from multiple workers?
-	err := <- errch
+	err := <-errch
 	return err
 }
-
 
 // read partial records from the chan, complete them and write them to disk.
 // Build up the internal tables as we go
 func (w *DBWriter) addFromChan(ch chan *record) (uint64, error) {
 	var n uint64
-	buf := make([]byte, 0, 65536)
 	for r := range ch {
-		r.hash = fasthash.Hash64(w.salt, r.key)
-		if _, ok := w.keymap[r.hash]; ok {
-			continue
-		}
-
-		r.off = w.off
-		r.csum = r.checksum(w.saltkey, w.off)
-
-		b := r.encode(buf)
-		nw, err := w.fd.Write(b)
+		ok, err := w.addRecord(r)
 		if err != nil {
-			return 0, err
+			return n, err
 		}
-
-		if nw != len(b) {
-			return 0, fmt.Errorf("%s: partial write; exp %d saw %d", w.fntmp, len(b), nw)
+		if ok {
+			n++
 		}
-
-		w.keymap[r.hash] = r
-		w.keys = append(w.keys, r.hash)
-		w.off += uint64(nw)
-		n++
 	}
 
 	return n, nil
+}
+
+func (w *DBWriter) addRecord(r *record) (bool, error) {
+	buf := make([]byte, 0, 65536)
+	r.hash = fasthash.Hash64(w.salt, r.key)
+	if _, ok := w.keymap[r.hash]; ok {
+		return false, nil
+	}
+
+	r.off = w.off
+	r.csum = r.checksum(w.saltkey, w.off)
+
+	b := r.encode(buf)
+	nw, err := w.fd.Write(b)
+	if err != nil {
+		return false, err
+	}
+
+	if nw != len(b) {
+		return false, fmt.Errorf("%s: partial write; exp %d saw %d", w.fntmp, len(b), nw)
+	}
+
+	w.keymap[r.hash] = r
+	w.keys = append(w.keys, r.hash)
+	w.off += uint64(nw)
+	return true, nil
 }
 
 // cleanup intermediate work and return an error instance
@@ -509,6 +544,4 @@ func (r *record) encode(buf []byte) []byte {
 	return buf
 }
 
-
 var ErrMPHFail = errors.New("failed to build MPH; gamma possibly small")
-

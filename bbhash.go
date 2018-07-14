@@ -27,7 +27,7 @@ type BBHash struct {
 	bits  []*bitVector
 	ranks []uint64
 	salt  uint64
-	g     float64	// gamma - rankvector size expansion factor
+	g     float64 // gamma - rankvector size expansion factor
 }
 
 // state used by go-routines when we concurrentize the algorithm
@@ -89,7 +89,6 @@ func New(g float64, keys []uint64) (*BBHash, error) {
 	return bb, nil
 }
 
-
 // NewSerial creates a new minimal hash function to represent the keys in 'keys'.
 // This constructor explicitly uses a single-threaded (non-concurrent) construction.
 func NewSerial(g float64, keys []uint64) (*BBHash, error) {
@@ -138,7 +137,6 @@ func (bb *BBHash) Find(k uint64) uint64 {
 
 	return 0
 }
-
 
 // setup state for serial or concurrent execution
 func (bb *BBHash) newState(nkeys int) *state {

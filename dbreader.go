@@ -8,9 +8,9 @@
 package bbhash
 
 import (
-	"os"
-	"fmt"
 	"encoding/binary"
+	"fmt"
+	"os"
 
 	//"github.com/dchest/siphash"
 	"github.com/opencoff/go-fasthash"
@@ -23,8 +23,6 @@ type DBReader struct {
 	salt    uint64
 	saltkey []byte
 }
-
-
 
 // read the next full record at offset 'off' - by seeking to that offset.
 // calculate the record checksum, validate it and so on.
@@ -69,7 +67,7 @@ func (r *DBReader) decodeRecord(off uint64) (*record, error) {
 
 	csum := x.checksum(r.saltkey, off)
 	if csum != x.csum {
-		return nil, fmt.Errorf("corrupted record at off %d (exp %#x, saw %#x)", off, x.checksum, csum)
+		return nil, fmt.Errorf("corrupted record at off %d (exp %#x, saw %#x)", off, x.csum, csum)
 	}
 
 	x.hash = fasthash.Hash64(r.salt, x.key)

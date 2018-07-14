@@ -28,7 +28,8 @@ func TestSimple(t *testing.T) {
 	keys := make([]uint64, len(keyw))
 
 	for i, s := range keyw {
-		keys[i] = fasthash.Hash64(0xdeadbeefbaadf00d, []byte(s))
+		h := fasthash.Hash64(0xdeadbeefbaadf00d, []byte(s))
+		keys[i] = h
 	}
 
 	b, err := New(2.0, keys)
@@ -55,7 +56,10 @@ func TestBBMarshal(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	b.MarshalBinary(&buf)
+	err = b.MarshalBinary(&buf)
+	assert(err == nil, "marshal failed: %s", err)
+
+	t.Logf("marshal size: %d bytes\n", b.MarshalBinarySize())
 
 	b2, err := UnmarshalBBHash(&buf)
 	assert(err == nil, "unmarshal failed: %s", err)
@@ -87,6 +91,18 @@ func TestBBMarshal(t *testing.T) {
 		br := b2.ranks[i]
 
 		assert(ar == br, "level-%d: rank mismatch (exp %d, saw %d)", i, ar, br)
+	}
+
+	for i, k := range keys {
+		x := b.Find(k)
+		y := b2.Find(k)
+		assert(x > 0, "can't find key %d: %#x", i, x)
+		assert(x <= uint64(len(keys)), "key %d <%#x> mapping %d out-of-bounds", i, k, x)
+
+		assert(y > 0, "b2: can't find key %d: %#x", i, y)
+		assert(y <= uint64(len(keys)), "b2: key %d <%#x> mapping %d out-of-bounds", i, k, y)
+
+		assert(x == y, "b and b2 mapped key %d <%#x>: %d vs. %d", i, k, x, y)
 	}
 
 }
