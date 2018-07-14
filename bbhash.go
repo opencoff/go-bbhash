@@ -71,7 +71,17 @@ func New(g float64, keys []uint64) (*BBHash, error) {
 		g:    g,
 	}
 
-	err := bb.addMore(keys)
+	n := len(keys)
+	s := bb.newState(n)
+
+	var err error
+
+	if n > MinParallelKeys {
+		err = s.concurrent(keys)
+	} else {
+		err = s.singleThread(keys)
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -129,19 +139,6 @@ func (bb *BBHash) Find(k uint64) uint64 {
 	return 0
 }
 
-
-// Internal function to add more keys to an existing bbhash instance
-// Callers must take care NOT to add duplicate keys.
-func (bb *BBHash) addMore(keys []uint64) error {
-	n := len(keys)
-	s := bb.newState(n)
-
-	if n > MinParallelKeys {
-		return s.concurrent(keys)
-	} else {
-		return s.singleThread(keys)
-	}
-}
 
 // setup state for serial or concurrent execution
 func (bb *BBHash) newState(nkeys int) *state {
