@@ -65,7 +65,9 @@ const debug bool = false
 // Once the construction is complete, callers can use "Find()" to find the
 // unique mapping for each key in 'keys'.
 func New(g float64, keys []uint64) (*BBHash, error) {
-
+	if g <= 1.0 {
+		g = 2.0
+	}
 	bb := &BBHash{
 		salt: rand64(),
 		g:    g,
@@ -92,6 +94,9 @@ func New(g float64, keys []uint64) (*BBHash, error) {
 // NewSerial creates a new minimal hash function to represent the keys in 'keys'.
 // This constructor explicitly uses a single-threaded (non-concurrent) construction.
 func NewSerial(g float64, keys []uint64) (*BBHash, error) {
+	if g <= 1.0 {
+		g = 2.0
+	}
 	bb := &BBHash{
 		salt: rand64(),
 		g:    g,
@@ -107,6 +112,9 @@ func NewSerial(g float64, keys []uint64) (*BBHash, error) {
 // NewConcurrent creates a new minimal hash function to represent the keys in 'keys'.
 // This gives callers explicit control over when to use a concurrent algorithm vs. serial.
 func NewConcurrent(g float64, keys []uint64) (*BBHash, error) {
+	if g <= 1.0 {
+		g = 2.0
+	}
 	bb := &BBHash{
 		salt: rand64(),
 		g:    g,
@@ -148,7 +156,7 @@ func (bb *BBHash) newState(nkeys int) *state {
 		bb:   bb,
 	}
 
-	//printf("bbhash: salt %#x, %d keys", bb.salt, nkeys)
+	//printf("bbhash: salt %#x, gamma %4.2f %d keys A %d bits", bb.salt, bb.g, nkeys, s.A.Size())
 	return s
 }
 
@@ -157,7 +165,7 @@ func (s *state) singleThread(keys []uint64) error {
 	A := s.A
 
 	for {
-		//printf("lvl %d: %d keys", s.lvl, len(keys))
+		//printf("lvl %d: %d keys A %d bits", s.lvl, len(keys), A.Size())
 		preprocess(s, keys)
 		A.Reset()
 		assign(s, keys)
@@ -182,7 +190,9 @@ func preprocess(s *state, keys []uint64) {
 	coll := s.coll
 	salt := s.bb.salt
 	sz := A.Size()
+	//printf("lvl %d => sz %d", s.lvl, sz)
 	for _, k := range keys {
+		//printf("   key %#x..", k)
 		i := hash(k, salt, s.lvl) % sz
 
 		if coll.IsSet(i) {

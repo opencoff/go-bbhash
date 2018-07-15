@@ -10,8 +10,7 @@ import (
 )
 
 func TestEndianOnLE(t *testing.T) {
-	assert := newAsserter(t)    // this is in bitvector_test.go
-
+	assert := newAsserter(t) // this is in bitvector_test.go
 
 	a0 := uint32(0xabcd1234)
 	b0 := ToLittleEndianUint32(a0)

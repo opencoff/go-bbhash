@@ -55,8 +55,6 @@ type DBWriter struct {
 	fntmp  string
 	fn     string
 	frozen bool
-
-	g float64 // gamma
 }
 
 type header struct {
@@ -270,12 +268,11 @@ func (w *DBWriter) AddCSVFile(fn string, comma, comment rune, kwfield, valfield 
 // For very large key spaces, a higher 'g' value is recommended (2.5~4.0); otherwise,
 // the Freeze() function will fail to generate an MPH.
 func (w *DBWriter) Freeze(g float64) error {
-
 	if w.frozen {
 		return fmt.Errorf("%s: already frozen", w.fn)
 	}
 
-	bb, err := New(w.g, w.keys)
+	bb, err := New(g, w.keys)
 	if err != nil {
 		return ErrMPHFail
 	}
@@ -393,6 +390,8 @@ func (w *DBWriter) Abort() {
 	os.Remove(w.fntmp)
 }
 
+// build the offset mapping table: map of MPH index to a record offset.
+// We opportunistically exploit concurrency to build the table faster.
 func (w *DBWriter) buildOffsets(bb *BBHash, offset []uint64) error {
 	if len(w.keys) >= MinParallelKeys {
 		return w.buildOffsetsConcurrent(bb, offset)
@@ -401,6 +400,7 @@ func (w *DBWriter) buildOffsets(bb *BBHash, offset []uint64) error {
 	return w.buildOffsetSingle(bb, offset, w.keys)
 }
 
+// serialized/single-threaded construction of the offset table.
 func (w *DBWriter) buildOffsetSingle(bb *BBHash, offset, keys []uint64) error {
 	for _, k := range keys {
 		r := w.keymap[k]
@@ -472,6 +472,7 @@ func (w *DBWriter) addFromChan(ch chan *record) (uint64, error) {
 	return n, nil
 }
 
+// compute checksums and add a record to the file at the current offset.
 func (w *DBWriter) addRecord(r *record) (bool, error) {
 	buf := make([]byte, 0, 65536)
 	r.hash = fasthash.Hash64(w.salt, r.key)

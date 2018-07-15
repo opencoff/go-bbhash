@@ -8,7 +8,6 @@
 package bbhash
 
 import (
-	//"os"
 	"reflect"
 	"syscall"
 	"unsafe"
@@ -20,7 +19,7 @@ func MmapUint64(fd int, off uint64, n int, prot, flags int) ([]uint64, error) {
 
 	// XXX Will this grow the file if needed?
 	ba, err := syscall.Mmap(fd, int64(off), sz, prot, flags)
-	if err != syscall.Errno(0) {
+	if err != nil {
 		return nil, err
 	}
 

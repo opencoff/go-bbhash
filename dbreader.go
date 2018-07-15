@@ -9,37 +9,259 @@ package bbhash
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"io"
 	"os"
+	"syscall"
 
-	//"github.com/dchest/siphash"
+	"crypto/sha512"
+	"crypto/subtle"
+
+	"github.com/hashicorp/golang-lru"
 	"github.com/opencoff/go-fasthash"
 )
 
 type DBReader struct {
 	bb *BBHash
 
-	fd      *os.File
 	salt    uint64
 	saltkey []byte
+
+	cache *lru.ARCCache
+
+	// memory mapped offset table
+	offsets []uint64
+
+	nkeys uint64
+
+	fd *os.File
+	fn string
+}
+
+func NewDBReader(fn string, csz int) (rd *DBReader, err error) {
+	fd, err := os.Open(fn)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		if err != nil {
+			fd.Close()
+		}
+	}()
+
+	// Number of records to cache
+	if csz <= 0 {
+		csz = 1048576
+	}
+
+	rd = &DBReader{
+		saltkey: make([]byte, 16),
+		fd:      fd,
+		fn:      fn,
+	}
+
+	var st os.FileInfo
+	var hdr *header
+	var n int
+
+	st, err = fd.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("%s: can't stat: %s", fn, err)
+	}
+
+	if st.Size() < (64 + 32) {
+		return nil, fmt.Errorf("%s: file too small or corrupted", fn)
+	}
+
+	var hdrb [64]byte
+
+	n, err = fd.Read(hdrb[:])
+	if err != nil {
+		return nil, fmt.Errorf("%s: can't read header: %s", fn, err)
+	}
+	if n != 64 {
+		return nil, fmt.Errorf("%s: short read of header; exp 64, saw %d", fn, n)
+	}
+
+	hdr, err = rd.decodeHeader(hdrb[:], st.Size())
+	if err != nil {
+		return nil, err
+	}
+
+	err = rd.verifyChecksum(hdrb[:], hdr.offtbl, st.Size())
+	if err != nil {
+		return nil, err
+	}
+
+	rd.cache, err = lru.NewARC(csz)
+	if err != nil {
+		return nil, err
+	}
+
+	// Now, we are certain that the header, the offset-table and bbhash bits are
+	// all valid and uncorrupted.
+
+	// mmap the offset table and return.
+	rd.offsets, err = MmapUint64(int(fd.Fd()), hdr.offtbl, int(hdr.nkeys), syscall.PROT_READ, syscall.MAP_PRIVATE)
+	if err != nil {
+		return nil, fmt.Errorf("%s: can't mmap offset table (off %d, sz %d): %s",
+			fn, hdr.offtbl, hdr.nkeys*8, err)
+	}
+
+	// The hash table starts after the offset table.
+	fd.Seek(int64(hdr.offtbl)+int64(hdr.nkeys*8), 0)
+	rd.bb, err = UnmarshalBBHash(fd)
+	if err != nil {
+		return nil, fmt.Errorf("%s: can't unmarshal hash table: %s", fn, err)
+	}
+
+	rd.salt = hdr.salt
+	rd.nkeys = hdr.nkeys
+
+	binary.BigEndian.PutUint64(rd.saltkey[:8], rd.salt)
+	binary.BigEndian.PutUint64(rd.saltkey[8:], ^rd.salt)
+
+	return rd, nil
+}
+
+// Lookup looks up 'key' in the table and returns the corresponding value.
+// If the key is not found, value is nil and returns false.
+func (rd *DBReader) Lookup(key []byte) ([]byte, bool) {
+
+	v, err := rd.Find(key)
+	if err != nil {
+		return nil, false
+	}
+
+	return v, true
+}
+
+// Find looks up 'key' in the table and returns the corresponding value.
+// It returns an error if the key is not found or the disk i/o failed or
+// the record checksum failed.
+func (rd *DBReader) Find(key []byte) ([]byte, error) {
+	h := fasthash.Hash64(rd.salt, key)
+
+	if v, ok := rd.cache.Get(h); ok {
+		r := v.(*record)
+		return r.val, nil
+	}
+
+	// Not in cache. So, go to disk and find it.
+	i := rd.bb.Find(h)
+	if i == 0 {
+		return nil, ErrNoKey
+	}
+
+	//fmt.Printf("key %s => %#x => %d\n", string(key), h, i)
+	off := ToLittleEndianUint64(rd.offsets[i-1])
+	r, err := rd.decodeRecord(off)
+	if err != nil {
+		return nil, err
+	}
+
+	if r.hash != h {
+		return nil, ErrNoKey
+	}
+
+	/*
+		// XXX Do we need this?
+		if subtle.ConstantTimeCompare(key, r.key) != 1 {
+			return nil, ErrNoKey
+		}
+	*/
+
+	rd.cache.Add(h, r)
+	return r.val, nil
+}
+
+// Verify checksum of all metadata: offset table, bbhash bits and the file header.
+func (rd *DBReader) verifyChecksum(hdrb []byte, offtbl uint64, sz int64) error {
+	h := sha512.New512_256()
+	h.Write(hdrb[:])
+
+	// we now verify the offset table before decoding anything else or allocating
+	// any memory.
+	expsz := sz - int64(offtbl) - int64(32)
+
+	rd.fd.Seek(int64(offtbl), 0)
+
+	nw, err := io.CopyN(h, rd.fd, expsz)
+	if err != nil {
+		return fmt.Errorf("%s: i/o error: %s", rd.fn, err)
+	}
+	if nw != expsz {
+		return fmt.Errorf("%s: partial read while verifying checksum, exp %d, saw %d", rd.fn, expsz, nw)
+	}
+
+	var expsum [32]byte
+
+	// Read the trailer -- which is the expected checksum
+	rd.fd.Seek(sz-32, 0)
+	nr, err := rd.fd.Read(expsum[:])
+	if err != nil {
+		return fmt.Errorf("%s: i/o error: %s", rd.fn, err)
+	}
+	if nr != 32 {
+		return fmt.Errorf("%s: partial read of checksum; exp 32, saw %d", rd.fn, nr)
+	}
+
+	csum := h.Sum(nil)
+	if subtle.ConstantTimeCompare(csum[:], expsum[:]) != 1 {
+		return fmt.Errorf("%s: checksum failure; exp %#x, saw %#x", rd.fn, expsum[:], csum[:])
+	}
+
+	rd.fd.Seek(int64(offtbl), 0)
+	return nil
+}
+
+// entry condition: b is 64 bytes long.
+func (rd *DBReader) decodeHeader(b []byte, sz int64) (*header, error) {
+	if string(b[:4]) != "BBHH" {
+		return nil, fmt.Errorf("%s: bad header", rd.fn)
+	}
+
+	be := binary.BigEndian
+	h := &header{}
+	i := 8
+
+	h.salt = be.Uint64(b[i : i+8])
+	i += 8
+	h.nkeys = be.Uint64(b[i : i+8])
+	i += 8
+	h.offtbl = be.Uint64(b[i : i+8])
+
+	if h.offtbl < 64 || h.offtbl >= uint64(sz-32) {
+		return nil, fmt.Errorf("%s: corrupt header", rd.fn)
+	}
+
+	// XXX Do we validate nkeys?
+	tblsz := h.nkeys * 8
+	if uint64(sz) < (64 + 32 + tblsz) {
+		return nil, fmt.Errorf("%s: corrupt header", rd.fn)
+	}
+
+	return h, nil
 }
 
 // read the next full record at offset 'off' - by seeking to that offset.
 // calculate the record checksum, validate it and so on.
-func (r *DBReader) decodeRecord(off uint64) (*record, error) {
-	_, err := r.fd.Seek(int64(off), 0)
+func (rd *DBReader) decodeRecord(off uint64) (*record, error) {
+	_, err := rd.fd.Seek(int64(off), 0)
 	if err != nil {
 		return nil, err
 	}
 
 	var hdr [2 + 4 + 8]byte
 
-	n, err := r.fd.Read(hdr[:])
+	n, err := rd.fd.Read(hdr[:])
 	if err != nil {
 		return nil, err
 	}
 	if n != (2 + 4 + 8) {
-		return nil, fmt.Errorf("short read at off %d (exp 14, saw %d)", off, n)
+		return nil, fmt.Errorf("%s: short read at off %d (exp 14, saw %d)", rd.fn, off, n)
 	}
 
 	be := binary.BigEndian
@@ -47,16 +269,16 @@ func (r *DBReader) decodeRecord(off uint64) (*record, error) {
 	vlen := int(be.Uint32(hdr[2:6]))
 
 	if klen <= 0 || vlen <= 0 || klen > 65535 {
-		return nil, fmt.Errorf("key-len %d or value-len %d out of bounds", klen, vlen)
+		return nil, fmt.Errorf("%s: key-len %d or value-len %d out of bounds", rd.fn, klen, vlen)
 	}
 
 	buf := make([]byte, klen+vlen)
-	n, err = r.fd.Read(buf)
+	n, err = rd.fd.Read(buf)
 	if err != nil {
 		return nil, err
 	}
 	if n != (klen + vlen) {
-		return nil, fmt.Errorf("short read at off %d (exp %d, saw %d)", off, klen+vlen, n)
+		return nil, fmt.Errorf("%s: short read at off %d (exp %d, saw %d)", rd.fn, off, klen+vlen, n)
 	}
 
 	x := &record{
@@ -65,11 +287,13 @@ func (r *DBReader) decodeRecord(off uint64) (*record, error) {
 		csum: be.Uint64(hdr[6:]),
 	}
 
-	csum := x.checksum(r.saltkey, off)
+	csum := x.checksum(rd.saltkey, off)
 	if csum != x.csum {
-		return nil, fmt.Errorf("corrupted record at off %d (exp %#x, saw %#x)", off, x.csum, csum)
+		return nil, fmt.Errorf("%s: corrupted record at off %d (exp %#x, saw %#x)", rd.fn, off, x.csum, csum)
 	}
 
-	x.hash = fasthash.Hash64(r.salt, x.key)
+	x.hash = fasthash.Hash64(rd.salt, x.key)
 	return x, nil
 }
+
+var ErrNoKey = errors.New("No such key")

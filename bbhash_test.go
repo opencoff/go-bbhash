@@ -35,10 +35,16 @@ func TestSimple(t *testing.T) {
 	b, err := New(2.0, keys)
 	assert(err == nil, "construction failed: %s", err)
 
+	kmap := make(map[uint64]uint64)
 	for i, k := range keys {
 		j := b.Find(k)
 		assert(j > 0, "can't find key %d: %#x", i, k)
 		assert(j <= uint64(len(keys)), "key %d <%#x> mapping %d out-of-bounds", i, k, j)
+
+		x, ok := kmap[j]
+		assert(!ok, "index %d already mapped to key %#x", j, x)
+
+		kmap[j] = k
 	}
 }
 
