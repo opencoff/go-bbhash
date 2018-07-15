@@ -5,6 +5,7 @@
 // This software does not come with any express or implied
 // warranty; it is provided "as is". No claim  is made to its
 // suitability for any purpose.
+
 package bbhash
 
 import (
@@ -14,7 +15,7 @@ import (
 )
 
 // map 'n' uint64s at offset 'off'
-func MmapUint64(fd int, off uint64, n int, prot, flags int) ([]uint64, error) {
+func mmapUint64(fd int, off uint64, n int, prot, flags int) ([]uint64, error) {
 	sz := n * 8
 
 	// XXX Will this grow the file if needed?
@@ -33,4 +34,19 @@ func MmapUint64(fd int, off uint64, n int, prot, flags int) ([]uint64, error) {
 	sh.Cap = n
 
 	return v, nil
+}
+
+
+// unmap a previously mapped u64 array
+func munmapUint64(fd int, v []uint64) error {
+	var a []byte
+
+	vh := (*reflect.SliceHeader)(unsafe.Pointer(&v))
+	bh := (*reflect.SliceHeader)(unsafe.Pointer(&a))
+
+	bh.Data = vh.Data
+	bh.Len = vh.Len * 8
+	bh.Cap = bh.Len
+
+	return syscall.Munmap(a)
 }

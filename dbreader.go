@@ -5,6 +5,7 @@
 // This software does not come with any express or implied
 // warranty; it is provided "as is". No claim  is made to its
 // suitability for any purpose.
+
 package bbhash
 
 import (
@@ -22,6 +23,9 @@ import (
 	"github.com/opencoff/go-fasthash"
 )
 
+// DBReader represents the query interface for a previously constructed
+// constant database (built using NewDBWriter()). The only meaningful
+// operation on such a database is Lookup().
 type DBReader struct {
 	bb *BBHash
 
@@ -39,7 +43,10 @@ type DBReader struct {
 	fn string
 }
 
-func NewDBReader(fn string, csz int) (rd *DBReader, err error) {
+// NewDBReader reads a previously construct database in file 'fn' and prepares
+// it for querying. Records are opportunistically cached after reading from disk.
+// We retain upto 'cache' number of records in memory (default 128).
+func NewDBReader(fn string, cache int) (rd *DBReader, err error) {
 	fd, err := os.Open(fn)
 	if err != nil {
 		return nil, err
@@ -52,8 +59,8 @@ func NewDBReader(fn string, csz int) (rd *DBReader, err error) {
 	}()
 
 	// Number of records to cache
-	if csz <= 0 {
-		csz = 1048576
+	if cache <= 0 {
+		cache = 128
 	}
 
 	rd = &DBReader{
@@ -95,7 +102,7 @@ func NewDBReader(fn string, csz int) (rd *DBReader, err error) {
 		return nil, err
 	}
 
-	rd.cache, err = lru.NewARC(csz)
+	rd.cache, err = lru.NewARC(cache)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +111,7 @@ func NewDBReader(fn string, csz int) (rd *DBReader, err error) {
 	// all valid and uncorrupted.
 
 	// mmap the offset table and return.
-	rd.offsets, err = MmapUint64(int(fd.Fd()), hdr.offtbl, int(hdr.nkeys), syscall.PROT_READ, syscall.MAP_PRIVATE)
+	rd.offsets, err = mmapUint64(int(fd.Fd()), hdr.offtbl, int(hdr.nkeys), syscall.PROT_READ, syscall.MAP_PRIVATE)
 	if err != nil {
 		return nil, fmt.Errorf("%s: can't mmap offset table (off %d, sz %d): %s",
 			fn, hdr.offtbl, hdr.nkeys*8, err)
@@ -126,10 +133,22 @@ func NewDBReader(fn string, csz int) (rd *DBReader, err error) {
 	return rd, nil
 }
 
+// Close closes the db
+func (rd *DBReader) Close() {
+	munmapUint64(int(rd.fd.Fd()), rd.offsets)
+	rd.fd.Close()
+	rd.cache.Purge()
+	rd.bb = nil
+	rd.fd = nil
+	rd.salt = 0
+	rd.saltkey = nil
+	rd.fn = ""
+}
+
+
 // Lookup looks up 'key' in the table and returns the corresponding value.
 // If the key is not found, value is nil and returns false.
 func (rd *DBReader) Lookup(key []byte) ([]byte, bool) {
-
 	v, err := rd.Find(key)
 	if err != nil {
 		return nil, false
@@ -156,7 +175,7 @@ func (rd *DBReader) Find(key []byte) ([]byte, error) {
 	}
 
 	//fmt.Printf("key %s => %#x => %d\n", string(key), h, i)
-	off := ToLittleEndianUint64(rd.offsets[i-1])
+	off := toLittleEndianUint64(rd.offsets[i-1])
 	r, err := rd.decodeRecord(off)
 	if err != nil {
 		return nil, err
@@ -296,4 +315,5 @@ func (rd *DBReader) decodeRecord(off uint64) (*record, error) {
 	return x, nil
 }
 
+// ErrNoKey is returned when a key cannot be found in the DB
 var ErrNoKey = errors.New("No such key")

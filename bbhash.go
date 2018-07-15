@@ -9,7 +9,11 @@
 // License GPLv2
 
 // Package bbhash implements BBHash - a new algorithm for creating fast, minimal perfect hash
-// functions as described in: https://arxiv.org/abs/1702.03154
+// functions as described in: https://arxiv.org/abs/1702.03154.
+// This implementation builds the perfect hash table concurrently if the number of keys
+// are larger than 'MinParallelKeys'. Additionally, BBHash instances can be marshaled and
+// unmarshaled from byte buffers. This package also implements a constant database (read only)
+// built on top of BBHash. The DB supports constant time lookups of arbitrary keys from the disk.
 package bbhash
 
 import (

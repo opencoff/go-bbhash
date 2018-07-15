@@ -5,6 +5,7 @@
 // This software does not come with any express or implied
 // warranty; it is provided "as is". No claim  is made to its
 // suitability for any purpose.
+
 package bbhash
 
 import (
@@ -31,6 +32,14 @@ import (
 //     little-endian. On big-endian systems, the DBReader code will convert
 //     it on the fly to native-endian.
 
+
+// DBWriter represents an abstraction to construct a read-only constant database.
+// This database uses BBHash as the underlying mechanism for constant time lookups
+// of keys; keys and values are represented as arbitrary byte sequences ([]byte).
+// The DB meta-data is protected by strong checksum (SHA512-256) and each key/value
+// record is protected by a distinct siphash-2-4. Records can be added to the DB via
+// plain delimited text files or CSV files. Once all addition of key/val is complete,
+// the DB is written to disk via the Freeze() function.
 type DBWriter struct {
 	fd *os.File
 
@@ -372,6 +381,7 @@ func (w *DBWriter) Freeze(g float64) error {
 	return nil
 }
 
+// encode header 'h' into bytestream 'b'
 func (h *header) encode(b []byte) {
 	be := binary.BigEndian
 	copy(b[:4], h.magic[:])
@@ -545,4 +555,6 @@ func (r *record) encode(buf []byte) []byte {
 	return buf
 }
 
+// ErrMPHFail is returned when the gamma value provided to Freeze() is too small to
+// build a minimal perfect hash table.
 var ErrMPHFail = errors.New("failed to build MPH; gamma possibly small")

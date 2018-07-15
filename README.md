@@ -9,6 +9,17 @@ over very large key sets.
 This is an implementation of [this paper](https://arxiv.org/abs/1702.03154). It is in part
 inspired by Damien Gryski's [Boomphf](https://github.com/dgryski/go-boomphf).
 
+The library exposes the following types:
+
+- `BBHash`: Represents an instance of a minimal perfect hash
+  function as described in the paper above.
+- `DBWriter`: Used to construct a constant database of key-value
+  pairs - where the lookup of a given key is doing in constant time
+  using `BBHash`. Essentially, this type serializes a collection
+  of key-value pairs using `BBHash` as the underlying index.
+- `DBReader`: Used for looking up key-values from a previously
+  constructed Database.
+
 *NOTE* Minimal Perfect Hash functions take a fixed input and
 generate a mapping to lookup the items in constant time. In
 particular, they are NOT a replacement for a traditional hash-table;
@@ -21,11 +32,12 @@ present during construction. In concrete terms:
    H(kx) for kx NOT in S may yield an integer result (indicating
    that kx was successfully "looked up").
 
-Thus, if users of a minimal-perfect-hash library are unsure of the
-input being passed to such a `Lookup()` function, they should add an
-additional comparison against the actual key to verify.
+Thus, if users of `BBHash` are unsure of the input being passed to such a
+`Lookup()` function, they should add an additional comparison against
+the actual key to verify. Look at `dbreader.go:Find()` for an
+example.
 
-## Usage
+## Basic Usage of BBHash
 Assuming you have read your keys, hashed them into `uint64`, this is how you can use the library:
 
 ```go
@@ -42,51 +54,88 @@ Assuming you have read your keys, hashed them into `uint64`, this is how you can
 
 ```
 
-### Storing the generated minimal hash to disk
-This implementation has the ability to marshal/unmarshal the
-generated Minimal Perfect Hash to disk via two functions:
+## Writing a DB Once, but lookup many times
+One can construct an on-disk constant-time lookup using `BBHash` as
+the underlying indexing mechanism. Such a DB is useful in situations
+where the key/value pairs are NOT changed frequently; i.e.,
+read-dominant workloads. The typical pattern in such situations is
+to build the constant-DB _once_ for efficient retrieval and do
+lookups multiple times.
 
-* `Marshal()` -- marshal an instance of generated bbhash into a
-  supplied `io.Writer`.
+### Step-1: Construct the DB from multiple sources
+For example, let us suppose that file *a.txt* and *b.csv* have lots
+of key,value pairs. We will build a constant DB using this.
 
-  ```go
+```go
 
-        bb, err := bbhash.New(2.0, keys)
-        if err != nil { panic(err) }
-
-        var buf bytes.Buffer
-
-        err = bb.Marshal(&buf)
-        if err != nil { panic(err) }
-
-        // Now, write buf.Bytes() to persistent storage.
-  ```
-
-* `UnmarshalBBHash()` -- unmarshal data from an `io.Reader` into an instance
-  of `bbhash`. This function is a package level function.
-
-  ```go
-
-    bb, err := bbhash.UnmarshalBBHash(ioreader)
+    wr, err := bbhash.NewDBWriter("file.db")
     if err != nil { panic(err) }
 
-    // Now use 'bb' as an initialized instance of BBHash.
-  ```
+    // add a.txt and a.csv to this db
 
+    // txt file delimited by white space;
+    // first token is the key, second token is the value
+    n, err := wr.AddTextFile("a.txt", " \t")
+    if err != nil { panic(err) }
+    fmt.Printf("a.txt: %d records added\n", n)
 
-Note that the marshaling routine does NOT add any sort of checksum
-to protect/verify the integrity of the marshaled data. It is upto
-the caller to add such checks.
+    // CSV file - comma delimited
+    // lines starting with '#' are considered comments
+    // field 0 is the key; and field 1 is the value.
+    // The first line is assumed to be a header and ignored.
+    n, err := wr.AddCSVFile("b.csv", ',', '#', 0, 1)
+    if err != nil { panic(err) }
+    fmt.Printf("b.csv: %d records added\n", n)
+
+    // Now, freeze the DB and write to disk.
+    // We will use a larger "gamma" value to increase chances of
+    // finding a minimal perfect hash function.
+    err = wr.Freeze(3.0)
+    if err != nil { panic(err) }
+```
+
+Now, `file.db` has the key/value pairs from the two input files
+stored in an efficient format for constant-time retrieval.
+
+### Step-2: Looking up Key in the DB
+Continuing the above example, suppose that you want to use the
+constructed DB for repeated lookups of various keys and retrieve
+their corresponding values:
+
+```go
+
+    // read 'file.db' previously constructed and cache upto 10,000
+    // records in memory.
+    rd, err := bbhash.NewDBReader("file.db", 10000)
+    if err != nil { panic(err) }
+```
+
+Now, given a key `k`, we can use `rd` to lookup the corresponding
+value:
+
+```go
+
+    val, err := rd.Find(k)
+
+    if err != nil {
+        if err == bbhash.ErrNoKey {
+            fmt.Printf("Key %x is not in the DB\n", k)
+        } else {
+            fmt.Printf("Error: %s\n", err)
+        }
+    }
+
+    fmt.Printf("Key %x => Value %x\n", k, val)
+```
 
 ## Implementation Notes
 
-* Keys are `uint64`, for all other types, use a good hash function such as Metrohash or
-  similar to turn your keys into `uint64`.
+* For constructing the BBHash, keys are `uint64`; the DBWriter
+  implementation uses Zi Long Tan's superfast hash function to
+  transform arbitary bytes to uint64.
 
-* When first constructed, it returns a mapping of the old keys to its perfect-hash analog.
-
-* The perfect-hash index for each key is "1" based (i.e., it is in the closed interval
-  `[1, len(keys)]`.
+* The perfect-hash index for each key is "1" based (i.e., it is in the closed
+  interval `[1, len(keys)]`.
 
 
 ## License
