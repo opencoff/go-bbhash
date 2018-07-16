@@ -1,4 +1,5 @@
 [![GoDoc](https://godoc.org/github.com/opencoff/go-bbhash?status.svg)](https://godoc.org/github.com/opencoff/go-bbhash)
+[![Go Report Card](https://goreportcard.com/badge/github.com/opencoff/go-bbhash)](https://goreportcard.com/report/github.com/opencoff/go-bbhash)
 
 # go-bbhash - Fast, Scalable Minimal Perfect Hash for Large Sets
 
