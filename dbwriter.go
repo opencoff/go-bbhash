@@ -40,6 +40,29 @@ import (
 // record is protected by a distinct siphash-2-4. Records can be added to the DB via
 // plain delimited text files or CSV files. Once all addition of key/val is complete,
 // the DB is written to disk via the Freeze() function.
+//
+// The DB has the following general structure:
+//   - 64 byte file header:
+//      * magic    [4]byte "BBHH"
+//      * flags    uint32  for now, all zeros
+//      * salt     uint64  random salt for hash functions
+//      * nkeys    uint64  Number of keys in the DB
+//      * offtbl   uint64  file offset where the 'key/val' offsets start
+//
+//   - Contiguous series of records; each record is a key/value pair:
+//      * keylen   uint16  length of the key
+//      * vallen   uint32  length of the value
+//      * cksum    uint64  Siphash checksum of key, value, offset
+//      * key      []byte  keylen bytes of key
+//      * val      []byte  vallen bytes of value
+//
+//   - Possibly a gap until the next PageSize boundary (4096 bytes)
+//   - Offset table: nkeys worth of file offsets. Entry 'i' is the perfect
+//     hash index for some key 'k' and offset[i] is the offset in the DB
+//     where the key and value can be found.
+//   - Marshaled BBHash bytes (BBHash:MarshalBinary())
+//   - 32 bytes of strong checksum (SHA512_256); this checksum is done over
+//     the file header, offset-table and marshaled bbhash.
 type DBWriter struct {
 	fd *os.File
 
@@ -130,11 +153,20 @@ func NewDBWriter(fn string) (*DBWriter, error) {
 	return w, nil
 }
 
+
+// TotalKeys returns the total number of distinct keys in the DB
+func (w *DBWriter) TotalKeys() int {
+	return len(w.keys)
+}
+
 // AddKeyVals adds a series of key-value matched pairs to the db. If they are of
 // unequal length, only the smaller of the lengths are used. Records with duplicate
 // keys are discarded.
 // Returns number of records added.
 func (w *DBWriter) AddKeyVals(keys []string, vals []string) (uint64, error) {
+	if w.frozen {
+		return 0, ErrFrozen
+	}
 
 	n := len(keys)
 	if len(vals) < n {
@@ -161,9 +193,13 @@ func (w *DBWriter) AddKeyVals(keys []string, vals []string) (uint64, error) {
 
 // AddTextFile adds contents from text file 'fn' where key and value are separated
 // by one of the characters in 'delim'. Duplicates, Empty lines or lines with no value
-// are skipped.
+// are skipped. This function just opens the file and calls AddTextStream()
 // Returns number of records added.
 func (w *DBWriter) AddTextFile(fn string, delim string) (uint64, error) {
+	if w.frozen {
+		return 0, ErrFrozen
+	}
+
 	fd, err := os.Open(fn)
 	if err != nil {
 		return 0, err
@@ -174,6 +210,18 @@ func (w *DBWriter) AddTextFile(fn string, delim string) (uint64, error) {
 	}
 
 	defer fd.Close()
+
+	return w.AddTextStream(fd, delim)
+}
+
+// AddTextStream adds contents from text stream 'fd' where key and value are separated
+// by one of the characters in 'delim'. Duplicates, Empty lines or lines with no value
+// are skipped.
+// Returns number of records added.
+func (w *DBWriter) AddTextStream(fd io.Reader, delim string) (uint64, error) {
+	if w.frozen {
+		return 0, ErrFrozen
+	}
 
 	rd := bufio.NewReader(fd)
 	sc := bufio.NewScanner(rd)
@@ -220,6 +268,32 @@ func (w *DBWriter) AddTextFile(fn string, delim string) (uint64, error) {
 // Records where the 'kwfield' and 'valfield' can't be evaluated are discarded.
 // Returns number of records added.
 func (w *DBWriter) AddCSVFile(fn string, comma, comment rune, kwfield, valfield int) (uint64, error) {
+	if w.frozen {
+		return 0, ErrFrozen
+	}
+
+	fd, err := os.Open(fn)
+	if err != nil {
+		return 0, err
+	}
+
+	defer fd.Close()
+
+	return w.AddCSVStream(fd, comma, comment, kwfield, valfield)
+}
+
+// AddCSVStream adds contents from CSV file 'fn'. If 'kwfield' and 'valfield' are
+// non-negative, they indicate the field# of the key and value respectively; the
+// default value for 'kwfield' & 'valfield' is 0 and 1 respectively.
+// If 'comma' is not 0, the default CSV delimiter is ','.
+// If 'comment' is not 0, then lines beginning with that rune are discarded.
+// Records where the 'kwfield' and 'valfield' can't be evaluated are discarded.
+// Returns number of records added.
+func (w *DBWriter) AddCSVStream(fd io.Reader, comma, comment rune, kwfield, valfield int) (uint64, error) {
+	if w.frozen {
+		return 0, ErrFrozen
+	}
+
 	if kwfield < 0 {
 		kwfield = 0
 	}
@@ -235,12 +309,6 @@ func (w *DBWriter) AddCSVFile(fn string, comma, comment rune, kwfield, valfield 
 
 	max += 1
 
-	fd, err := os.Open(fn)
-	if err != nil {
-		return 0, err
-	}
-
-	defer fd.Close()
 
 	ch := make(chan *record, 10)
 	cr := csv.NewReader(fd)
@@ -278,7 +346,7 @@ func (w *DBWriter) AddCSVFile(fn string, comma, comment rune, kwfield, valfield 
 // the Freeze() function will fail to generate an MPH.
 func (w *DBWriter) Freeze(g float64) error {
 	if w.frozen {
-		return fmt.Errorf("%s: already frozen", w.fn)
+		return ErrFrozen
 	}
 
 	bb, err := New(g, w.keys)
@@ -517,7 +585,7 @@ func (w *DBWriter) error(f string, v ...interface{}) error {
 	return fmt.Errorf(f, v...)
 }
 
-// Calculate a semi-string checksum on the important fields of the record
+// Calculate a semi-strong checksum on the important fields of the record
 // at offset 'off'. In our implementation, we use siphash-24 (64-bit) as
 // the strong checksum; and we use the offset as one of the items being
 // protected.
@@ -558,3 +626,7 @@ func (r *record) encode(buf []byte) []byte {
 // ErrMPHFail is returned when the gamma value provided to Freeze() is too small to
 // build a minimal perfect hash table.
 var ErrMPHFail = errors.New("failed to build MPH; gamma possibly small")
+
+// ErrFrozen is returned when attempting to add new records to an already frozen DB
+// It is also returned when trying to freeze a DB that's already frozen.
+var ErrFrozen = errors.New("DB already frozen")

@@ -102,6 +102,12 @@ func NewDBReader(fn string, cache int) (rd *DBReader, err error) {
 		return nil, err
 	}
 
+	// sanity check - even though we have verified the strong checksum
+	tblsz := hdr.nkeys * 8
+	if uint64(st.Size()) < (64 + 32 + tblsz) {
+		return nil, fmt.Errorf("%s: corrupt header", fn)
+	}
+
 	rd.cache, err = lru.NewARC(cache)
 	if err != nil {
 		return nil, err
@@ -131,6 +137,11 @@ func NewDBReader(fn string, cache int) (rd *DBReader, err error) {
 	binary.BigEndian.PutUint64(rd.saltkey[8:], ^rd.salt)
 
 	return rd, nil
+}
+
+// TotalKeys returns the total number of distinct keys in the DB
+func (rd *DBReader) TotalKeys() int {
+	return len(rd.offsets)
 }
 
 // Close closes the db
@@ -253,12 +264,6 @@ func (rd *DBReader) decodeHeader(b []byte, sz int64) (*header, error) {
 	h.offtbl = be.Uint64(b[i : i+8])
 
 	if h.offtbl < 64 || h.offtbl >= uint64(sz-32) {
-		return nil, fmt.Errorf("%s: corrupt header", rd.fn)
-	}
-
-	// XXX Do we validate nkeys?
-	tblsz := h.nkeys * 8
-	if uint64(sz) < (64 + 32 + tblsz) {
 		return nil, fmt.Errorf("%s: corrupt header", rd.fn)
 	}
 
