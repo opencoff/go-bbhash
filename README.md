@@ -64,6 +64,7 @@ First, lets run some tests and make sure bbhash is working fine:
 Now, lets build and run the example program:
 ```sh
 
+  $ GOPATH=$PWD go get   github.com/opencoff/go-bbhash/example
   $ GOPATH=$PWD go build github.com/opencoff/go-bbhash/example
   $ ./example -h
 ```
@@ -73,19 +74,20 @@ hostnames and IP addresses: `genhosts.py`. You can run it like so:
 
 ```sh
 
-  $ python src/github.com/opencoff/go-bbhash/example/genhosts.py 192.168.1.0/24 > a.txt
+  $ python src/github.com/opencoff/go-bbhash/example/genhosts.py 192.168.1.0/24 192.168.55.0/24 > a.txt
 ```
 
-The above example generates 255 hostnames and corresponding IP addresses; each of the
-IP addresses is sequentially drawn from the 192.168.1.0/24 subnet.
+The above example generates 512 hostnames and corresponding IP addresses; each of the
+IP addresses is sequentially drawn from the two subnets.
 
 **NOTE** If you use a "/8" subnet mask you will generate a _lot_ of data (~430MB in size).
 
-Once you have the input generated, you can feed it to the `mphdb` program to generate a MPH DB:
+Once you have the input generated, you can feed it to the `example` program above to generate
+a MPH DB:
 ```sh
 
-  $ ./mphdb foo.db a.txt
-  $./mphdb -v foo.db
+  $ ./example foo.db a.txt
+  $ ./example -V foo.db
 ```
 
 ## Basic Usage of BBHash

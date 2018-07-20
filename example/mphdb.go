@@ -114,6 +114,7 @@ func main() {
 
 	err = db.Freeze(g)
 	if err != nil {
+		db.Abort()
 		die("can't write db %s: %s", fn, err)
 	}
 }
