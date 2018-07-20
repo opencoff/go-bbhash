@@ -11,34 +11,22 @@ import (
 	"github.com/opencoff/go-fasthash"
 )
 
-var keys = []string{
-	"expectoration",
-	"mizzenmastman",
-	"stockfather",
-	"pictorialness",
-	"villainous",
-	"unquality",
-	"sized",
-	"Tarahumari",
-	"endocrinotherapy",
-	"quicksandy",
-}
-
 var keep bool
 
 func init() {
-
 	flag.BoolVar(&keep, "keep", false, "Keep test DB")
 }
 
 func TestDB(t *testing.T) {
 	assert := newAsserter(t)
 
-	vals := make([]string, len(keyw))
+	vals := make([][]byte, len(keyw))
+	keys := make([][]byte, len(keyw))
 
-	for i, s := range keys {
+	for i, s := range keyw {
 		h := fasthash.Hash64(0xdeadbeefbaadf00d, []byte(s))
-		vals[i] = fmt.Sprintf("%#x", h)
+		vals[i] = []byte(fmt.Sprintf("%#x", h))
+		keys[i] = []byte(s)
 	}
 
 	fn := fmt.Sprintf("%s/mph%d.db", os.TempDir(), rand64())
@@ -68,9 +56,9 @@ func TestDB(t *testing.T) {
 	for i, k := range keys {
 		v := vals[i]
 
-		s, err := rd.Find([]byte(k))
+		s, err := rd.Find(k)
 		assert(err == nil, "can't find key %s: %s", k, err)
 
-		assert(string(s) == v, "key %s: value mismatch; exp %s, saw %s", k, v, string(s))
+		assert(string(s) == string(v), "key %s: value mismatch; exp %s, saw %s", k, v, string(s))
 	}
 }

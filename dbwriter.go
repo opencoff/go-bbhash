@@ -163,7 +163,7 @@ func (w *DBWriter) TotalKeys() int {
 // unequal length, only the smaller of the lengths are used. Records with duplicate
 // keys are discarded.
 // Returns number of records added.
-func (w *DBWriter) AddKeyVals(keys []string, vals []string) (uint64, error) {
+func (w *DBWriter) AddKeyVals(keys [][]byte, vals [][]byte) (uint64, error) {
 	if w.frozen {
 		return 0, ErrFrozen
 	}
@@ -176,8 +176,8 @@ func (w *DBWriter) AddKeyVals(keys []string, vals []string) (uint64, error) {
 	var z uint64
 	for i := 0; i < n; i++ {
 		r := &record{
-			key: []byte(keys[i]),
-			val: []byte(vals[i]),
+			key: keys[i],
+			val: vals[i],
 		}
 		ok, err := w.addRecord(r)
 		if err != nil {

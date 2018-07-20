@@ -38,6 +38,56 @@ Thus, if users of `BBHash` are unsure of the input being passed to such a
 the actual key to verify. Look at `dbreader.go:Find()` for an
 example.
 
+## How do I use it?
+Like any other golang library: `go get github.com/opencoff/go-bbhash`.
+
+## Example Program
+There is a working example of the `DBWriter` and `DBReader` interfaces in the
+file *example/mphdb.go*. This example demonstrates the following functionality:
+
+- add one or more space delimited key/value files (first field is key, second
+  field is value)
+- add one or more CSV files (first field is key, second field is value)
+- Write the resulting MPH DB to disk
+- Read the DB and verify its integrity
+
+First, lets run some tests and make sure bbhash is working fine:
+
+```sh
+
+  $ mkdir bbhash && cd bbhash
+  $ GOPATH=$PWD go get  github.com/opencoff/go-bbhash
+  $ GOPATH=$PWD go test github.com/opencoff/go-bbhash
+
+```
+
+Now, lets build and run the example program:
+```sh
+
+  $ GOPATH=$PWD go build github.com/opencoff/go-bbhash/example
+  $ ./example -h
+```
+
+There is a helper python script to generate a very large text file of
+hostnames and IP addresses: `genhosts.py`. You can run it like so:
+
+```sh
+
+  $ python src/github.com/opencoff/go-bbhash/example/genhosts.py 192.168.1.0/24 > a.txt
+```
+
+The above example generates 255 hostnames and corresponding IP addresses; each of the
+IP addresses is sequentially drawn from the 192.168.1.0/24 subnet.
+
+**NOTE** If you use a "/8" subnet mask you will generate a _lot_ of data (~430MB in size).
+
+Once you have the input generated, you can feed it to the `mphdb` program to generate a MPH DB:
+```sh
+
+  $ ./mphdb foo.db a.txt
+  $./mphdb -v foo.db
+```
+
 ## Basic Usage of BBHash
 Assuming you have read your keys, hashed them into `uint64`, this is how you can use the library:
 
@@ -47,7 +97,7 @@ Assuming you have read your keys, hashed them into `uint64`, this is how you can
 	if err != nil { panic(err) }
 
 	// Now, call Find() with each key to gets its unique mapping.
-    // Note: Find() returns values in the range closed-interval [1, len(keys)]
+	// Note: Find() returns values in the range closed-interval [1, len(keys)]
 	for i, k := range keys {
         j := bb.Find(k)
 		fmt.Printf("%d: %#x maps to %d\n", i, k, j)
@@ -129,6 +179,7 @@ value:
     fmt.Printf("Key %x => Value %x\n", k, val)
 ```
 
+
 ## Implementation Notes
 
 * For constructing the BBHash, keys are `uint64`; the DBWriter
@@ -137,7 +188,6 @@ value:
 
 * The perfect-hash index for each key is "1" based (i.e., it is in the closed
   interval `[1, len(keys)]`.
-
 
 ## License
 GPL v2.0

@@ -86,7 +86,6 @@ func (b *bitVector) ComputeRank() uint64 {
 
 // Rank calculates the rank on bit 'i'
 // (Rank is the number of bits set before it).
-// We actually return 1 less than the actual rank.
 func (b *bitVector) Rank(i uint64) uint64 {
 	x := i / 64
 	y := i % 64
