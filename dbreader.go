@@ -71,7 +71,6 @@ func NewDBReader(fn string, cache int) (rd *DBReader, err error) {
 
 	var st os.FileInfo
 	var hdr *header
-	var n int
 
 	st, err = fd.Stat()
 	if err != nil {
@@ -84,12 +83,9 @@ func NewDBReader(fn string, cache int) (rd *DBReader, err error) {
 
 	var hdrb [64]byte
 
-	n, err = fd.Read(hdrb[:])
+	_, err = io.ReadFull(fd, hdrb[:])
 	if err != nil {
 		return nil, fmt.Errorf("%s: can't read header: %s", fn, err)
-	}
-	if n != 64 {
-		return nil, fmt.Errorf("%s: short read of header; exp 64, saw %d", fn, n)
 	}
 
 	hdr, err = rd.decodeHeader(hdrb[:], st.Size())
@@ -230,12 +226,9 @@ func (rd *DBReader) verifyChecksum(hdrb []byte, offtbl uint64, sz int64) error {
 
 	// Read the trailer -- which is the expected checksum
 	rd.fd.Seek(sz-32, 0)
-	nr, err := rd.fd.Read(expsum[:])
+	_, err = io.ReadFull(rd.fd, expsum[:])
 	if err != nil {
 		return fmt.Errorf("%s: i/o error: %s", rd.fn, err)
-	}
-	if nr != 32 {
-		return fmt.Errorf("%s: partial read of checksum; exp 32, saw %d", rd.fn, nr)
 	}
 
 	csum := h.Sum(nil)
@@ -280,12 +273,9 @@ func (rd *DBReader) decodeRecord(off uint64) (*record, error) {
 
 	var hdr [2 + 4 + 8]byte
 
-	n, err := rd.fd.Read(hdr[:])
+	_, err = io.ReadFull(rd.fd, hdr[:])
 	if err != nil {
 		return nil, err
-	}
-	if n != (2 + 4 + 8) {
-		return nil, fmt.Errorf("%s: short read at off %d (exp 14, saw %d)", rd.fn, off, n)
 	}
 
 	be := binary.BigEndian
@@ -297,12 +287,9 @@ func (rd *DBReader) decodeRecord(off uint64) (*record, error) {
 	}
 
 	buf := make([]byte, klen+vlen)
-	n, err = rd.fd.Read(buf)
+	_, err = io.ReadFull(rd.fd, buf)
 	if err != nil {
 		return nil, err
-	}
-	if n != (klen + vlen) {
-		return nil, fmt.Errorf("%s: short read at off %d (exp %d, saw %d)", rd.fn, off, klen+vlen, n)
 	}
 
 	x := &record{

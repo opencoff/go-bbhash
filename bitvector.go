@@ -143,12 +143,9 @@ func unmarshalbitVector(r io.Reader) (*bitVector, error) {
 	var x [8]byte
 	le := binary.LittleEndian
 
-	n, err := r.Read(x[:])
+	_, err := io.ReadFull(r, x[:])
 	if err != nil {
 		return nil, err
-	}
-	if n != 8 {
-		return nil, errShortRead(n)
 	}
 
 	bvlen := le.Uint64(x[:])
@@ -161,12 +158,9 @@ func unmarshalbitVector(r io.Reader) (*bitVector, error) {
 	}
 
 	for i := uint64(0); i < bvlen; i++ {
-		n, err := r.Read(x[:])
+		_, err := io.ReadFull(r, x[:])
 		if err != nil {
 			return nil, err
-		}
-		if n != 8 {
-			return nil, errShortRead(n)
 		}
 
 		b.v[i] = le.Uint64(x[:])

@@ -85,12 +85,9 @@ func (bb *BBHash) MarshalBinarySize() uint64 {
 func UnmarshalBBHash(r io.Reader) (*BBHash, error) {
 	var b [32]byte // 4 x 64-bit words of header
 
-	n, err := r.Read(b[:])
+	_, err := io.ReadFull(r, b[:])
 	if err != nil {
 		return nil, err
-	}
-	if n != 32 {
-		return nil, errShortRead(n)
 	}
 
 	le := binary.LittleEndian
@@ -127,6 +124,3 @@ func errShortWrite(n int) error {
 	return fmt.Errorf("bbhash: incomplete write; exp 8, saw %d", n)
 }
 
-func errShortRead(n int) error {
-	return fmt.Errorf("bbhash: incomplete read; exp 8, saw %d", n)
-}
