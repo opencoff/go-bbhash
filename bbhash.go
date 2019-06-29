@@ -187,8 +187,7 @@ func (s *state) singleThread(keys []uint64) error {
 	return nil
 }
 
-// pre-process to detect colliding bits; concurrentificated
-// We have a synchronization point at the end of this loop
+// pre-process to detect colliding bits
 func preprocess(s *state, keys []uint64) {
 	A := s.A
 	coll := s.coll

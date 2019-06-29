@@ -4,22 +4,24 @@
 # go-bbhash - Fast, Scalable Minimal Perfect Hash for Large Sets
 
 ## What is it?
-A library to create, marshal, unmarshal and query minimal perfect hash functions
+A library to create, query and serialize/de-serialize minimal perfect hash functions
 over very large key sets.
 
 This is an implementation of [this paper](https://arxiv.org/abs/1702.03154). It is in part
-inspired by Damien Gryski's [Boomphf](https://github.com/dgryski/go-boomphf).
+inspired by Damien Gryski's [Boomphf](https://github.com/dgryski/go-boomphf) - this implementation
+differs from Boomphf in one significant way - this library adds an efficient serialization &
+deserialization API.
 
 The library exposes the following types:
 
 - `BBHash`: Represents an instance of a minimal perfect hash
   function as described in the paper above.
 - `DBWriter`: Used to construct a constant database of key-value
-  pairs - where the lookup of a given key is doing in constant time
+  pairs - where the lookup of a given key is done in constant time
   using `BBHash`. Essentially, this type serializes a collection
   of key-value pairs using `BBHash` as the underlying index.
 - `DBReader`: Used for looking up key-values from a previously
-  constructed Database.
+  constructed (serialized) database.
 
 *NOTE* Minimal Perfect Hash functions take a fixed input and
 generate a mapping to lookup the items in constant time. In
@@ -55,18 +57,17 @@ First, lets run some tests and make sure bbhash is working fine:
 
 ```sh
 
-  $ mkdir bbhash && cd bbhash
-  $ GOPATH=$PWD go get  github.com/opencoff/go-bbhash
-  $ GOPATH=$PWD go test github.com/opencoff/go-bbhash
+  $ git clone https://github.com/opencoff/go-bbhash
+  $ cd go-bbhash
+  $ make test
 
 ```
 
 Now, lets build and run the example program:
 ```sh
 
-  $ GOPATH=$PWD go get   github.com/opencoff/go-bbhash/example
-  $ GOPATH=$PWD go build github.com/opencoff/go-bbhash/example
-  $ ./example -h
+  $ make
+  $ ./mphdb -h
 ```
 
 There is a helper python script to generate a very large text file of
@@ -74,11 +75,11 @@ hostnames and IP addresses: `genhosts.py`. You can run it like so:
 
 ```sh
 
-  $ python src/github.com/opencoff/go-bbhash/example/genhosts.py 192.168.1.0/24 192.168.55.0/24 > a.txt
+  $ python ./example/genhosts.py 192.168.0.0/16 > a.txt
 ```
 
-The above example generates 512 hostnames and corresponding IP addresses; each of the
-IP addresses is sequentially drawn from the two subnets.
+The above example generates 65535 hostnames and corresponding IP addresses; each of the
+IP addresses is sequentially drawn from the subnet.
 
 **NOTE** If you use a "/8" subnet mask you will generate a _lot_ of data (~430MB in size).
 
@@ -86,8 +87,14 @@ Once you have the input generated, you can feed it to the `example` program abov
 a MPH DB:
 ```sh
 
-  $ ./example foo.db a.txt
-  $ ./example -V foo.db
+  $ ./mphdb foo.db a.txt
+  $ ./mphdb -V foo.db
+```
+
+It is possible that "mphdb" fails to construct a DB and complains of gamma being too small. In
+that case, try increasing "g" like so:
+```sh
+  $ ./mphdb -g 2.75 foo.db a.txt
 ```
 
 ## Basic Usage of BBHash
@@ -95,15 +102,15 @@ Assuming you have read your keys, hashed them into `uint64`, this is how you can
 
 ```go
 
-	bb, err := bbhash.New(2.0, keys)
-	if err != nil { panic(err) }
+        bb, err := bbhash.New(2.0, keys)
+        if err != nil { panic(err) }
 
-	// Now, call Find() with each key to gets its unique mapping.
-	// Note: Find() returns values in the range closed-interval [1, len(keys)]
-	for i, k := range keys {
-        j := bb.Find(k)
-		fmt.Printf("%d: %#x maps to %d\n", i, k, j)
-	}
+        // Now, call Find() with each key to gets its unique mapping.
+        // Note: Find() returns values in the range closed-interval [1, len(keys)]
+        for i, k := range keys {
+                j := bb.Find(k)
+                fmt.Printf("%d: %#x maps to %d\n", i, k, j)
+        }
 
 ```
 
@@ -157,7 +164,7 @@ their corresponding values:
 
 ```go
 
-    // read 'file.db' previously constructed and cache upto 10,000
+    // read 'file.db' and cache upto 10,000
     // records in memory.
     rd, err := bbhash.NewDBReader("file.db", 10000)
     if err != nil { panic(err) }

@@ -19,7 +19,7 @@ import (
 	"crypto/sha512"
 	"crypto/subtle"
 
-	"github.com/hashicorp/golang-lru"
+	"github.com/opencoff/golang-lru"
 	"github.com/opencoff/go-fasthash"
 )
 

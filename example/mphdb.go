@@ -24,7 +24,7 @@ import (
 
 	B "github.com/opencoff/go-bbhash"
 
-	flag "github.com/ogier/pflag"
+	flag "github.com/opencoff/pflag"
 )
 
 type value struct {
@@ -39,7 +39,7 @@ var Verify bool		// if set, verify a previously constructed DB
 func main() {
 	usage := fmt.Sprintf("%s [options] OUTPUT [INPUT ...]", os.Args[0])
 
-	flag.Float64VarP(&Gamma, "gamma", "g", 2.0, "Bitfield expansion factor")
+	flag.Float64VarP(&Gamma, "gamma", "g", 2.0, "Bitfield expansion factor `g`")
 	flag.BoolVarP(&Verify, "verify", "V", false, "Verify a constant DB")
 	flag.Usage = func() {
 		fmt.Printf("mphdb - create constant DB from txt or CSV files using MPH\nUsage: %s\n", usage)

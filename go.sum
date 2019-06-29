@@ -1,0 +1,8 @@
+github.com/dchest/siphash v1.2.1 h1:4cLinnzVJDKxTCl9B01807Yiy+W7ZzVHj/KIroQRvT4=
+github.com/dchest/siphash v1.2.1/go.mod h1:q+IRvb2gOSrUnYoPqHiyHXS0FOBBOdl6tONBlVnOnt4=
+github.com/opencoff/go-fasthash v0.0.0-20180406145558-aed761496075 h1:E6jK9PFTGb2trsAstgycRMavAki/W1NDF8aQ636Qf/k=
+github.com/opencoff/go-fasthash v0.0.0-20180406145558-aed761496075/go.mod h1:MwRUIaK13/MmcsYPJVhMELsWvP1PQjTZeNn442GPpU4=
+github.com/opencoff/golang-lru v0.6.0 h1:e5jyAHA4AJbohh8mmPB6JpTvZMVrnh3z5GFAqTADVm8=
+github.com/opencoff/golang-lru v0.6.0/go.mod h1:Ll98eBFICVmenoj+uJfH+ReFgDMD+nuK9VshgMwDs80=
+github.com/opencoff/pflag v0.2.0 h1:bSI5Qz5W15aCs+4YRDYX6LK5qaUD9GpjZKYP4fli/EY=
+github.com/opencoff/pflag v0.2.0/go.mod h1:mTLzGGUGda1Av3d34iAJlh0JIlRxmFZtmc6qoWPspK0=
