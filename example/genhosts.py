@@ -19,21 +19,24 @@ def main():
     random.shuffle(wl)
     i = 0
 
+    out = []
     for s in sys.argv[1:]:
         try:
             a0 = ipv4(s)
-        except Exception, ex:
+        except Exception as ex:
             warn("can't parse subnet %s: %s", s, str(ex))
             continue
 
         j = 0
         for a in a0:
             host = "%s-%.4d" % (wl[j], i)
-            print "%s %s" % (host, a.addrstr())
+            out.append("%s %s" % (host, a.addrstr()))
             j += 1
             i += 1
             if j >= len(wl): j = 0
 
+    random.shuffle(out)
+    print("\n".join(out))
 def wordlist(wlen):
     """Generate all words of length at least 'wlen'"""
 
@@ -86,46 +89,46 @@ class ipv4:
     
     """
 
-    _max = 32L
+    _max = 32
 
     def _parse(self, st="0.0.0.0"):
         """Parse an ipv4 address string"""
 
-        if type(st) == long:
-            if st > 0xffffffffL:
-                raise ValueError, "Malformed IP address '%l'" % st
+        if type(st) == int:
+            if st > 0xffffffff:
+                raise ValueError("Malformed IP address '%l'" % st)
 
-            return st & 0xffffffffL
+            return st & 0xffffffff
 
         try:
-            x = long(st)
-            if x > 0xffffffffL:
-                raise ValueError, "Malformed IP address '%s'" % st
-            return x & 0xffffffffL
+            x = int(st)
+            if x > 0xffffffff:
+                raise ValueError("Malformed IP address '%s'" % st)
+            return x & 0xffffffff
         except:
             pass
 
         v = st.split('.')
         if len(v) != 4:
-            raise ValueError, "Malformed IP address '%s'" % st
+            raise ValueError("Malformed IP address '%s'" % st)
 
         try:
-            vi = map(long, v)
+            vi = map(int, v)
         except:
-            raise ValueError, "Malformed IP address '%s'" % st
+            raise ValueError("Malformed IP address '%s'" % st)
 
-        z = 0L
+        z = 0
         for x in vi:
             if x > 255 or x < 0:
-                raise ValueError, "Malformed IP address '%s'" % st
+                raise ValueError("Malformed IP address '%s'" % st)
             z = (z << 8) | x
 
-        return z & 0xffffffffL
+        return z & 0xffffffff
 
     def _parse_mask(self, st):
         """Intelligently grok a netmask"""
 
-        if type(st) == long or type(st) == int:
+        if type(st) == int:
 
             if st > self._max:
                 return st
@@ -134,12 +137,13 @@ class ipv4:
 
         if st.find('.') < 0:
             try:
-                v = long(st)
+                v = int(st)
             except:
-                raise ValueError, "Malformed netmask '%s'" % st
+                raise ValueError("Malformed netmask '%s'" % st)
 
             if v > self._max:
-                raise ValueError, "Too many bits in netmask '%s'" % st
+                raise ValueError("Too many bits in netmask '%s'" %
+            st)
 
             return prefix_to_ipv4(v)
         else:
@@ -202,7 +206,7 @@ class ipv4:
 
     def __hash__(self):
         """Return int usable as a key to dict"""
-        return int(self._addr & 0x7fffffffL)
+        return int(self._addr & 0x7fffffff)
 
     # Accessor methods
     def cidr(self):
@@ -210,18 +214,18 @@ class ipv4:
 
     def first(self):
         """Return the first IP address of the range"""
-        net = 0xffffffffL & (self._addr & self._mask)
+        net = 0xffffffff & (self._addr & self._mask)
         return ipv4(net, self._mask)
 
     def count(self):
         """Count number of addresses in the range"""
         f = self._addr
-        l = 0xffffffffL & (self._addr | ~self._mask)
+        l = 0xffffffff & (self._addr | ~self._mask)
         return l - f
 
     def last(self):
         """Return the last IP address of the range"""
-        l = 0xffffffffL & (self._addr | ~self._mask)
+        l = 0xffffffff & (self._addr | ~self._mask)
         return ipv4(l, self._mask)
 
     def standard(self):
@@ -242,7 +246,7 @@ class ipv4:
 
     def net(self):
         """Return network number of this address+mask"""
-        return 0xffffffffL & (self._addr & self._mask)
+        return 0xffffffff & (self._addr & self._mask)
 
 
     def is_member_of(self, net):
@@ -256,11 +260,11 @@ class ipv4:
         return mynet == theirnet
 
     def network(self):
-        net = 0xffffffffL & (self._addr & self._mask)
+        net = 0xffffffff & (self._addr & self._mask)
         return "%s/%s" % (_tostr(net), _tostr(self._mask))
 
     def network_cidr(self):
-        net = 0xffffffffL & (self._addr & self._mask)
+        net = 0xffffffff & (self._addr & self._mask)
         return "%s/%d" % (_tostr(net), self._cidr)
 
     tostr = classmethod(tostr)
@@ -279,7 +283,7 @@ def ipv4_to_prefix(n):
 
 def prefix_to_ipv4(n):
     """Convert a 32-bit network prefix length into a IPv4 address"""
-    ones = 0xffffffffL
+    ones = 0xffffffff
     return ones ^ (ones >> n)
 
 def _tostr(v):
@@ -300,10 +304,10 @@ class _ipv4iter(object):
     def __iter__(self):
         return self
 
-    def next(self):
+    def __next__(self):
         """Return the next address after self.cur"""
 
-        m = 0xffffffffL & (self.cur & self.mask)
+        m = 0xffffffff & (self.cur & self.mask)
         if m != self.last:
             raise StopIteration
 
