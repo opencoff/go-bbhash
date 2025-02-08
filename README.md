@@ -3,6 +3,10 @@
 
 # go-bbhash - Fast, Scalable Minimal Perfect Hash for Large Sets
 
+# This library is superceded by
+[go-chd](https://github.com/opencoff/go-mph). go-bbhash is no longer
+maintained. Please use go-mph.
+
 ## What is it?
 A library to create, query and serialize/de-serialize minimal perfect hash functions
 over very large key sets.
