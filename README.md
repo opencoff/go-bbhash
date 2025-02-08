@@ -4,7 +4,7 @@
 # go-bbhash - Fast, Scalable Minimal Perfect Hash for Large Sets
 
 # This library is superceded by
-[go-chd](https://github.com/opencoff/go-mph). go-bbhash is no longer
+[go-mph](https://github.com/opencoff/go-mph). go-bbhash is no longer
 maintained. Please use go-mph.
 
 ## What is it?
